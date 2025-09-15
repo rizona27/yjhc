@@ -61,7 +61,7 @@ def create_main_interface(app, parent):
     main_width = 800  # 主窗口宽度
     log_width = 300   # 日志窗口宽度
     chart_height = 270 # 图表高度
-    top_height = 220  # 顶部组件高度
+    top_height = 240  # 增加顶部组件高度到240
     
     # 可用宽度减去日志窗口和边距
     available_width = main_width - log_width - 20
@@ -246,7 +246,8 @@ def create_log_window(app, parent):
     """创建内嵌的日志窗口，使用 place 布局"""
     main_width = 300
     log_width = 280
-    log_height = 500
+    # 增加日志窗口高度到520
+    log_height = 520
     
     # 计算日志窗口的位置
     log_x = main_width - log_width - 10

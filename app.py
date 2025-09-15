@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.
 
 # 全局变量跟踪打开的窗口数
 OPEN_WINDOWS = 0
-MAX_WINDOWS = 2
+MAX_WINDOWS = 1
 
 class PerformanceBacktestTool:
     def __init__(self, root):
@@ -36,7 +36,7 @@ class PerformanceBacktestTool:
         self.root = root
         self.root.title("业绩表现回测工具")
         # 初始宽度设为500，不包含日志区域
-        self.root.geometry("500x520")  
+        self.root.geometry("500x540")  
         self.root.resizable(True, False)  # 允许水平拉伸，不允许垂直拉伸
 
         # 设置程序图标
@@ -84,6 +84,11 @@ class PerformanceBacktestTool:
         self.style.configure("TLabelframe", background=self.config.colors["background"], bordercolor=self.config.colors["border"])
         self.style.configure("TLabelframe.Label", background=self.config.colors["background"], foreground=self.config.colors["primary"])
 
+        self.style.configure("TLabelframe.Label", 
+                            background=self.config.colors["background"], 
+                            foreground=self.config.colors["primary"],
+                            font=("Helvetica", 9, "bold"))
+
         self.style.configure("TButton",
                             font=("Helvetica", 9),
                             padding=5,
@@ -102,9 +107,6 @@ class PerformanceBacktestTool:
                             bordercolor=self.config.colors["border"],
                             borderwidth=1,
                             relief="groove")
-        self.style.configure("TLabelframe.Label",
-                            foreground=self.config.colors["primary"],
-                            font=("Helvetica", 9, "bold"))
 
         self.style.configure("Treeview",
                             background=self.config.colors["card"],
@@ -1460,7 +1462,7 @@ class PerformanceBacktestTool:
                 x = self.root.winfo_x()
                 y = self.root.winfo_y()
                 # 设置新宽度（原宽度 + 日志区域宽度）
-                self.root.geometry(f"{500 + 300}x520+{x}+{y}")
+                self.root.geometry(f"{500 + 300}x540+{x}+{y}")
             else:
                 # 隐藏日志区域并调整窗口大小
                 self.log_frame.pack_forget()
@@ -1468,7 +1470,7 @@ class PerformanceBacktestTool:
                 x = self.root.winfo_x()
                 y = self.root.winfo_y()
                 # 恢复原宽度
-                self.root.geometry(f"500x520+{x}+{y}")
+                self.root.geometry(f"500x540+{x}+{y}")
 
             settings_window.destroy()
             self.log(f"日志窗口已{'开启' if log_window_var.get() else '关闭'}", "success")
@@ -1576,7 +1578,7 @@ class PerformanceBacktestTool:
             x = self.root.winfo_x()
             y = self.root.winfo_y()
             # 恢复原宽度
-            self.root.geometry(f"500x520+{x}+{y}")
+            self.root.geometry(f"500x540+{x}+{y}")
             self.config.set("show_log_window", False)
 
 if __name__ == "__main__":
