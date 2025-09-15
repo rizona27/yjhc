@@ -1,3 +1,4 @@
+# config.py 完整代码（修改后）
 import os
 import tkinter as tk
 
@@ -31,7 +32,7 @@ class Config:
         }
         
         self.settings = {
-            "show_hover_data": False,
+            "show_hover_data": False,  # 默认关闭悬停数据
             "hover_date": "",
             "export_directory": os.getcwd(),
             "show_log_window": True,
