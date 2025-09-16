@@ -20,28 +20,27 @@ def create_menu_bar(app):
     settings_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="设置", menu=settings_menu)
 
-    # 直接添加导出图表设置菜单项
+    # 按照新顺序添加菜单项
     settings_menu.add_command(
         label="导出图表设置",
         command=app.set_export_chart_settings
     )
 
-    # 导出目录设置
     settings_menu.add_command(
         label="导出目录设置",
         command=app.set_export_directory
     )
 
-    # 日志窗口设置
-    settings_menu.add_command(
-        label="日志窗口设置",
-        command=app.set_log_window
-    )
-
-    # 提示框设置
     settings_menu.add_command(
         label="提示框设置",
         command=app.set_textbox_settings
+    )
+
+    # 日志窗口设置 - 根据当前状态显示不同的文本
+    log_window_label = "关闭日志" if app.config.get("show_log_window", True) else "开启日志"
+    settings_menu.add_command(
+        label=log_window_label,
+        command=app.set_log_window
     )
 
     # 关于菜单
@@ -49,7 +48,7 @@ def create_menu_bar(app):
     menubar.add_cascade(label="关于", menu=about_menu)
     about_menu.add_command(label="说明", command=app.show_readme)
 
-    return menubar
+    return menubar, settings_menu
 
 def create_main_interface(app, parent):
     """创建主界面，使用 place 布局"""
@@ -246,16 +245,11 @@ def create_log_window(app, parent):
     """创建内嵌的日志窗口，使用 place 布局"""
     main_width = 300
     log_width = 280
-    # 增加日志窗口高度到520
     log_height = 520
-    
-    # 计算日志窗口的位置
-    log_x = main_width - log_width - 10
-    
+    log_x = main_width - log_width - 10   
     log_frame = ttk.Frame(parent)
     log_frame.place(x=log_x, y=10, width=log_width, height=log_height)
     log_frame.pack_propagate(False)
-
     log_notebook = ttk.Notebook(log_frame)
     log_notebook.pack(fill=tk.BOTH, expand=True)
 
@@ -265,8 +259,8 @@ def create_log_window(app, parent):
         success_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg=app.config.colors["card"],
-        fg="#27AE60",
+        bg="#F5F8FA",
+        fg="#28A745",
         borderwidth=1,
         relief="solid"
     )
@@ -279,8 +273,8 @@ def create_log_window(app, parent):
         warning_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg=app.config.colors["card"],
-        fg="#E74C3C",
+        bg="#F5F8FA",
+        fg="#FFC107",
         borderwidth=1,
         relief="solid"
     )
@@ -293,8 +287,8 @@ def create_log_window(app, parent):
         info_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg=app.config.colors["card"],
-        fg=app.config.colors["text"],
+        bg="#F5F8FA",
+        fg="#17A2B8",
         borderwidth=1,
         relief="solid"
     )
@@ -307,8 +301,8 @@ def create_log_window(app, parent):
         error_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg=app.config.colors["card"],
-        fg="#C0392B",
+        bg="#F5F8FA",
+        fg="#DC3545",
         borderwidth=1,
         relief="solid"
     )

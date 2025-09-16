@@ -1,3 +1,4 @@
+# app.py
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import matplotlib.pyplot as plt
@@ -23,6 +24,42 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.
 OPEN_WINDOWS = 0
 MAX_WINDOWS = 1
 
+# 在类定义前添加 ToolTip 类
+class ToolTip:
+    def __init__(self, widget, text):
+        self.widget = widget
+        self.text = text
+        self.tooltip = None
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+
+    def enter(self, event=None):
+        x, y, _, _ = self.widget.bbox("insert")
+        x += self.widget.winfo_rootx() + 25
+        y += self.widget.winfo_rooty() + 25
+        self.tooltip = tk.Toplevel(self.widget)
+        self.tooltip.wm_overrideredirect(True)
+        self.tooltip.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(self.tooltip, text=self.text, justify=tk.LEFT,
+                         background="#ffffe0", relief=tk.SOLID, borderwidth=1,
+                         wraplength=180)
+        label.pack()
+
+    def leave(self, event=None):
+        if self.tooltip:
+            self.tooltip.destroy()
+            self.tooltip = None
+
+    def showtip(self):
+        self.enter()
+
+    def hidetip(self):
+        self.leave()
+
+    def update_text(self, new_text):
+        """更新工具提示文本"""
+        self.text = new_text
+
 class PerformanceBacktestTool:
     def __init__(self, root):
         global OPEN_WINDOWS
@@ -37,7 +74,7 @@ class PerformanceBacktestTool:
         self.root.title("业绩表现回测工具")
         # 初始宽度设为500，不包含日志区域
         self.root.geometry("500x540")  
-        self.root.resizable(True, False)  # 允许水平拉伸，不允许垂直拉伸
+        self.root.resizable(False, False)  # 不允许拉伸窗口
 
         # 设置程序图标
         try:
@@ -65,6 +102,7 @@ class PerformanceBacktestTool:
         self.hover_line_y = None
         self.hover_marker = None
         self.hover_text_obj = None
+        self.hover_date_marker = None  # 新增：用于存储设置的悬停日期标记
         self.max_min_text_obj = [] # 用于存储 Max/Min 文本对象
 
         self.max_value = None
@@ -138,7 +176,7 @@ class PerformanceBacktestTool:
         self.log_frame.pack_forget()
 
         # 创建菜单栏
-        self.menu_bar = create_menu_bar(self)
+        self.menu_bar, self.settings_menu = create_menu_bar(self)
 
         # 创建主界面（放在左侧框架中）
         self.main_frame, self.components = create_main_interface(self, self.left_frame)
@@ -160,9 +198,80 @@ class PerformanceBacktestTool:
         # 创建日志窗口（放在右侧框架中）
         self.log_texts = create_log_window(self, self.log_frame)
 
+        # 根据配置决定是否显示日志窗口
+        if self.config.get("show_log_window", False):
+            self.show_log_window()
+        else:
+            self.hide_log_window()
+
+        # 设置窗口居中显示
+        self.center_window(self.root)
+        
         self.log("欢迎使用业绩表现回测工具", "success")
         self.log("请导入文件开始使用", "success")
         self.log("rizona.cn@gmail.com", "success")
+
+    def center_window(self, window):
+        """将窗口居中显示"""
+        window.update_idletasks()
+        width = window.winfo_width()
+        height = window.winfo_height()
+        x = (window.winfo_screenwidth() // 2) - (width // 2)
+        y = (window.winfo_screenheight() // 2) - (height // 2)
+        window.geometry(f"{width}x{height}+{x}+{y}")
+
+    def center_window_relative(self, window, parent):
+        """将子窗口居中显示在父窗口中心"""
+        parent.update_idletasks()
+        parent_x = parent.winfo_x()
+        parent_y = parent.winfo_y()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+        
+        window.update_idletasks()
+        win_width = window.winfo_width()
+        win_height = window.winfo_height()
+        
+        x = parent_x + (parent_width // 2) - (win_width // 2)
+        y = parent_y + (parent_height // 2) - (win_height // 2)
+        
+        window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+
+    def update_log_menu_label(self):
+        """更新日志菜单项的标签"""
+        if self.config.get("show_log_window", True):
+            self.settings_menu.entryconfig(3, label="关闭日志")
+        else:
+            self.settings_menu.entryconfig(3, label="开启日志")
+
+    def show_log_window(self):
+        """显示日志窗口"""
+        self.log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
+        # 调整窗口大小
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        self.root.geometry(f"{500 + 300}x540+{x}+{y}")
+        self.config.set("show_log_window", True)
+        self.update_log_menu_label()
+
+    def hide_log_window(self):
+        """隐藏日志窗口"""
+        self.log_frame.pack_forget()
+        # 调整窗口大小
+        x = self.root.winfo_x()
+        y = self.root.winfo_y()
+        self.root.geometry(f"500x540+{x}+{y}")
+        self.config.set("show_log_window", False)
+        self.update_log_menu_label()
+
+    def set_log_window(self):
+        """切换日志窗口显示/隐藏"""
+        if self.config.get("show_log_window", True):
+            self.hide_log_window()
+            self.log("已关闭日志窗口", "success")
+        else:
+            self.show_log_window()
+            self.log("已开启日志窗口", "success")
 
     def log(self, message, message_type="info"):
         """记录日志到所有相关的文本控件"""
@@ -218,12 +327,40 @@ class PerformanceBacktestTool:
             self.log(f"日期 '{date_str}' 格式校验通过。", "success")
             return True
         except ValueError:
-            messagebox.showerror("日期格式错误", f"无效的日期格式: '{date_str}'。请使用 YYYY-MM-DD 或 YYYYMMDD 格式。")
+            # 居中显示错误提示
+            error_window = tk.Toplevel(self.root)
+            error_window.title("日期格式错误")
+            error_window.geometry("400x100")
+            error_window.resizable(False, False)
+            error_window.transient(self.root)
+            error_window.grab_set()
+            
+            # 居中显示错误窗口
+            self.center_window_relative(error_window, self.root)
+            
+            tk.Label(error_window, text=f"无效的日期格式: '{date_str}'。请使用 YYYY-MM-DD 或 YYYYMMDD 格式。", 
+                    padx=20, pady=20).pack()
+            tk.Button(error_window, text="确定", command=error_window.destroy, width=10).pack(pady=10)
+            
             entry.configure(foreground="red")
             self.log(f"日期 '{date_str}' 格式校验失败。", "error")
             return False
         except Exception as e:
-            messagebox.showerror("日期格式错误", f"日期处理出错: {str(e)}")
+            # 居中显示错误提示
+            error_window = tk.Toplevel(self.root)
+            error_window.title("日期格式错误")
+            error_window.geometry("400x100")
+            error_window.resizable(False, False)
+            error_window.transient(self.root)
+            error_window.grab_set()
+            
+            # 居中显示错误窗口
+            self.center_window_relative(error_window, self.root)
+            
+            tk.Label(error_window, text=f"日期处理出错: {str(e)}", 
+                    padx=20, pady=20).pack()
+            tk.Button(error_window, text="确定", command=error_window.destroy, width=10).pack(pady=10)
+            
             self.log(f"日期处理出错: {str(e)}", "error")
             return False
 
@@ -292,20 +429,7 @@ class PerformanceBacktestTool:
         readme_window.transient(self.root)
 
         # 设置窗口居中显示
-        readme_window.update_idletasks()  # 更新窗口任务
-
-        # 计算窗口居中位置
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-
-        win_width = 300
-        win_height = 200
-        x = root_x + (root_width // 2) - (win_width // 2)
-        y = root_y + (root_height // 2) - (win_height // 2)
-
-        readme_window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+        self.center_window_relative(readme_window, self.root)
         readme_window.deiconify()  # 显示窗口
 
         readme_window.grab_set()
@@ -313,27 +437,7 @@ class PerformanceBacktestTool:
         main_frame = ttk.Frame(readme_window)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        scroll_frame = ttk.Frame(main_frame)
-        scroll_frame.pack(fill=tk.BOTH, expand=True)
-
-        scrollbar = ttk.Scrollbar(scroll_frame)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-
-        text_area = tk.Text(
-            scroll_frame,
-            wrap=tk.WORD,
-            yscrollcommand=scrollbar.set,
-            bg=self.config.colors["card"],
-            fg=self.config.colors["text"],
-            font=("Helvetica", 10),
-            borderwidth=1,
-            relief="solid",
-            padx=10,
-            pady=10
-        )
-        text_area.pack(fill=tk.BOTH, expand=True)
-        scrollbar.config(command=text_area.yview)
-
+        # 使用Label替代Text，使文字不可选中
         readme_text = """
 1. 导入数据
   - 支持csv、xls、xlsx格式
@@ -363,8 +467,19 @@ class PerformanceBacktestTool:
   - [YYYYMMDD]
   - Mailto: rizona.cn@gmail.com
 """
-        text_area.insert(tk.INSERT, readme_text)
-        text_area.config(state=tk.DISABLED)
+        text_label = tk.Label(
+            main_frame,
+            text=readme_text,
+            justify=tk.LEFT,
+            bg=self.config.colors["card"],
+            fg=self.config.colors["text"],
+            font=("Helvetica", 9),
+            borderwidth=1,
+            relief="solid",
+            padx=10,
+            pady=10
+        )
+        text_label.pack(fill=tk.BOTH, expand=True)
 
         author_frame = ttk.Frame(main_frame)
         author_frame.pack(fill=tk.X, pady=(0, 5))
@@ -731,72 +846,74 @@ class PerformanceBacktestTool:
             zorder=10
         )
 
-        # 根据配置设置Max/Min文本框位置
-        position = self.config.get("max_min_position")
-        alpha = self.config.get("textbox_alpha")
+        # 检查是否显示文本框
+        if self.config.get("show_textbox", True):
+            # 根据配置设置Max/Min文本框位置
+            position = self.config.get("max_min_position")
+            alpha = self.config.get("textbox_alpha")
 
-        # 调整Max/Min文本框位置，避免重叠
-        if position == "top-left":
-            max_x, max_y = 0.02, 0.95
-            min_x, min_y = 0.02, 0.85
-            max_ha, max_va = 'left', 'top'
-            min_ha, min_va = 'left', 'top'
-        elif position == "top-right":
-            max_x, max_y = 0.98, 0.95
-            min_x, min_y = 0.98, 0.85
-            max_ha, max_va = 'right', 'top'
-            min_ha, min_va = 'right', 'top'
-        elif position == "bottom-left":
-            max_x, max_y = 0.02, 0.15
-            min_x, min_y = 0.02, 0.05
-            max_ha, max_va = 'left', 'bottom'
-            min_ha, min_va = 'left', 'bottom'
-        elif position == "bottom-right":
-            max_x, max_y = 0.98, 0.15
-            min_x, min_y = 0.98, 0.05
-            max_ha, max_va = 'right', 'bottom'
-            min_ha, min_va = 'right', 'bottom'
+            # 调整Max/Min文本框位置，避免重叠
+            if position == "top-left":
+                max_x, max_y = 0.02, 0.95
+                min_x, min_y = 0.02, 0.85
+                max_ha, max_va = 'left', 'top'
+                min_ha, min_va = 'left', 'top'
+            elif position == "top-right":
+                max_x, max_y = 0.98, 0.95
+                min_x, min_y = 0.98, 0.85
+                max_ha, max_va = 'right', 'top'
+                min_ha, min_va = 'right', 'top'
+            elif position == "bottom-left":
+                max_x, max_y = 0.02, 0.15
+                min_x, min_y = 0.02, 0.05
+                max_ha, max_va = 'left', 'bottom'
+                min_ha, min_va = 'left', 'bottom'
+            elif position == "bottom-right":
+                max_x, max_y = 0.98, 0.15
+                min_x, min_y = 0.98, 0.05
+                max_ha, max_va = 'right', 'bottom'
+                min_ha, min_va = 'right', 'bottom'
 
-        # 修正：统一文本格式以保证框体大小一致，保持左对齐
-        max_text = f'Max: {self.max_value: >8.4f} ({self.max_date_str})'
-        min_text = f'Min: {self.min_value: >8.4f} ({self.min_date_str})'
+            # 修正：统一文本格式以保证框体大小一致，保持左对齐
+            max_text = f'Max: {self.max_value: >8.4f} ({self.max_date_str})'
+            min_text = f'Min: {self.min_value: >8.4f} ({self.min_date_str})'
 
-        max_text_obj = self.ax.text(
-            max_x, max_y,
-            max_text,
-            transform=self.ax.transAxes,
-            fontsize=8,
-            color=self.config.colors["max_color"],
-            bbox=dict(
-                boxstyle="round,pad=0.3",  # 减小内边距
-                fc="white",
-                ec="none",
-                lw=0,
-                alpha=alpha
-            ),
-            ha=max_ha,
-            va=max_va,
-            zorder=10
-        )
+            max_text_obj = self.ax.text(
+                max_x, max_y,
+                max_text,
+                transform=self.ax.transAxes,
+                fontsize=8,
+                color=self.config.colors["max_color"],
+                bbox=dict(
+                    boxstyle="round,pad=0.3",  # 减小内边距
+                    fc="white",
+                    ec="none",
+                    lw=0,
+                    alpha=alpha
+                ),
+                ha=max_ha,
+                va=max_va,
+                zorder=10
+            )
 
-        min_text_obj = self.ax.text(
-            min_x, min_y,
-            min_text,
-            transform=self.ax.transAxes,
-            fontsize=8,
-            color=self.config.colors["min_color"],
-            bbox=dict(
-                boxstyle="round,pad=0.3",  # 减小内边距
-                fc="white",
-                ec="none",
-                lw=0,
-                alpha=alpha
-            ),
-            ha=min_ha,
-            va=min_va,
-            zorder=10
-        )
-        self.max_min_text_obj = [max_text_obj, min_text_obj]
+            min_text_obj = self.ax.text(
+                min_x, min_y,
+                min_text,
+                transform=self.ax.transAxes,
+                fontsize=8,
+                color=self.config.colors["min_color"],
+                bbox=dict(
+                    boxstyle="round,pad=0.3",  # 减小内边距
+                    fc="white",
+                    ec="none",
+                    lw=0,
+                    alpha=alpha
+                ),
+                ha=min_ha,
+                va=min_va,
+                zorder=10
+            )
+            self.max_min_text_obj = [max_text_obj, min_text_obj]
 
         date_range = df_plot['日期'].max() - df_plot['日期'].min()
         days = date_range.days
@@ -1088,6 +1205,10 @@ class PerformanceBacktestTool:
 
     def on_hover(self, event):
         """处理鼠标悬停事件，显示日期和净值，并绘制十字虚线"""
+        # 如果有设置的悬停日期，则不显示鼠标悬停数据
+        if self.config.get("show_hover_data") and self.config.get("hover_date"):
+            return
+            
         # 使用当前显示的图表数据而不是完整数据集
         if self.current_plot_data is None or event.inaxes != self.ax:
             self.on_leave(event)
@@ -1149,45 +1270,47 @@ class PerformanceBacktestTool:
                 zorder=10
             )
 
-            # 根据Max/Min位置确定Hover文本位置
-            position = self.config.get("max_min_position")
-            alpha = self.config.get("textbox_alpha")
+            # 检查是否显示文本框
+            if self.config.get("show_textbox", True):
+                # 根据Max/Min位置确定Hover文本位置
+                position = self.config.get("max_min_position")
+                alpha = self.config.get("textbox_alpha")
 
-            # 动态计算文本位置，避免重叠
-            if position == "top-left":
-                hover_x, hover_y = 0.02, 0.75  # 调整Y位置，避免与Max/Min重叠
-                hover_ha, hover_va = 'left', 'top'
-            elif position == "top-right":
-                hover_x, hover_y = 0.98, 0.75  # 调整Y位置，避免与Max/Min重叠
-                hover_ha, hover_va = 'right', 'top'
-            elif position == "bottom-left":
-                hover_x, hover_y = 0.02, 0.25  # 调整Y位置，避免与Max/Min重叠
-                hover_ha, hover_va = 'left', 'bottom'
-            elif position == "bottom-right":
-                hover_x, hover_y = 0.98, 0.25  # 调整Y位置，避免与Max/Min重叠
-                hover_ha, hover_va = 'right', 'bottom'
+                # 动态计算文本位置，避免重叠
+                if position == "top-left":
+                    hover_x, hover_y = 0.02, 0.75  # 调整Y位置，避免与Max/Min重叠
+                    hover_ha, hover_va = 'left', 'top'
+                elif position == "top-right":
+                    hover_x, hover_y = 0.98, 0.75  # 调整Y位置，避免与Max/Min重叠
+                    hover_ha, hover_va = 'right', 'top'
+                elif position == "bottom-left":
+                    hover_x, hover_y = 0.02, 0.25  # 调整Y位置，避免与Max/Min重叠
+                    hover_ha, hover_va = 'left', 'bottom'
+                elif position == "bottom-right":
+                    hover_x, hover_y = 0.98, 0.25  # 调整Y位置，避免与Max/Min重叠
+                    hover_ha, hover_va = 'right', 'bottom'
 
-            # 更新左上角的标注文本
-            hover_data_text = f'Hover: {nav:.4f} ({date.strftime("%y/%m/%d")})'
+                # 更新左上角的标注文本
+                hover_data_text = f'Hover: {nav:.4f} ({date.strftime("%y/%m/%d")})'
 
-            # 修正: 统一Hover文本颜色为橙色
-            self.hover_text_obj = self.ax.text(
-                hover_x, hover_y,
-                hover_data_text,
-                transform=self.ax.transAxes,
-                fontsize=8,
-                color=self.config.colors["chart_hover"],
-                bbox=dict(
-                    boxstyle="round,pad=0.3",  # 减小内边距
-                    fc="white",
-                    ec="none",
-                    lw=0,
-                    alpha=alpha
-                ),
-                ha=hover_ha,
-                va=hover_va,
-                zorder=10
-            )
+                # 修正: 统一Hover文本颜色为橙色
+                self.hover_text_obj = self.ax.text(
+                    hover_x, hover_y,
+                    hover_data_text,
+                    transform=self.ax.transAxes,
+                    fontsize=8,
+                    color=self.config.colors["chart_hover"],
+                    bbox=dict(
+                        boxstyle="round,pad=0.3",  # 减小内边距
+                        fc="white",
+                        ec="none",
+                        lw=0,
+                        alpha=alpha
+                    ),
+                    ha=hover_ha,
+                    va=hover_va,
+                    zorder=10
+                )
 
             self.canvas.draw_idle()
 
@@ -1197,6 +1320,10 @@ class PerformanceBacktestTool:
 
     def on_leave(self, event):
         """处理鼠标离开事件，移除标注和标记"""
+        # 如果有设置的悬停日期，则不处理鼠标离开事件
+        if self.config.get("show_hover_data") and self.config.get("hover_date"):
+            return
+            
         # 只移除悬停时创建的临时对象
         if self.hover_line_x:
             try:
@@ -1237,26 +1364,20 @@ class PerformanceBacktestTool:
 
     def set_export_chart_settings(self):
         """设置导出图表选项"""
+        if self.df is None or len(self.df) == 0:
+            messagebox.showwarning("警告", "请先导入数据文件！")
+            self.log("设置导出图表失败: 无数据", "warning")
+            return
+
         settings_window = tk.Toplevel(self.root)
         settings_window.title("导出图表设置")
-        settings_window.geometry("300x150")  # 增加高度以容纳日期输入框
+        settings_window.geometry("210x150")  # 增加高度以容纳更多内容
         settings_window.resizable(False, False)
         settings_window.transient(self.root)
         settings_window.grab_set()
 
         # 设置窗口居中显示
-        settings_window.update_idletasks()
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-
-        win_width = 300
-        win_height = 150
-        x = root_x + (root_width // 2) - (win_width // 2)
-        y = root_y + (root_height // 2) - (win_height // 2)
-
-        settings_window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+        self.center_window_relative(settings_window, self.root)
 
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -1265,15 +1386,70 @@ class PerformanceBacktestTool:
         hover_var = tk.BooleanVar(value=self.config.get("show_hover_data"))
         hover_date_var = tk.StringVar(value=self.config.get("hover_date"))
 
+        def validate_date_format():
+            date_str = hover_date_entry.get().strip()
+            if not date_str:
+                return True
+            
+            try:
+                normalized_date = normalize_date_string(date_str, self.log)
+                datetime.strptime(normalized_date, "%Y-%m-%d")
+                hover_date_entry.configure(foreground=self.config.colors["text"])
+                return True
+            except ValueError:
+                hover_date_entry.configure(foreground="red")
+                return False
+
+        def validate_date_range():
+            if not validate_date_format():
+                return False
+            
+            date_str = hover_date_entry.get().strip()
+            try:
+                normalized_date = normalize_date_string(date_str, self.log)
+                hover_date = datetime.strptime(normalized_date, "%Y-%m-%d")
+
+                # 检查日期是否在数据范围内
+                if self.df is not None and len(self.df) > 0:
+                    min_date = self.df['日期'].min()
+                    max_date = self.df['日期'].max()
+                    if hover_date < min_date or hover_date > max_date:
+                        # 显示错误提示
+                        error_window = tk.Toplevel(settings_window)
+                        error_window.title("错误")
+                        error_window.geometry("210x130")
+                        error_window.resizable(False, False)
+                        error_window.transient(settings_window)
+                        error_window.grab_set()
+
+                        # 居中显示错误窗口
+                        self.center_window_relative(error_window, settings_window)
+                    
+                        error_msg = f"悬停日期必须在数据日期范围内: {min_date.strftime('%Y-%m-%d')} 至 {max_date.strftime('%Y-%m-%d')}"
+                        label = tk.Label(error_window, text=error_msg, wraplength=180, justify=tk.LEFT)
+                        label.pack(padx=10, pady=10)
+                        tk.Button(error_window, text="确定", command=error_window.destroy, width=10).pack(pady=10)
+                        return False
+                return True
+            except:
+                return False
+
+        def on_hover_date_change(*args):
+            validate_date_format()
+
+        hover_date_var.trace('w', on_hover_date_change)
+
         def toggle_hover_date():
             if hover_var.get():
                 hover_date_frame.pack(fill=tk.X, pady=(5, 0))
+                # 立即验证日期范围
+                validate_date_range()
             else:
                 hover_date_frame.pack_forget()
 
         hover_check = ttk.Checkbutton(
             main_frame,
-            text="在导出的图表中显示悬停数据",
+            text="悬停数据开启/关闭",
             variable=hover_var,
             command=toggle_hover_date
         )
@@ -1287,21 +1463,25 @@ class PerformanceBacktestTool:
         ttk.Label(hover_date_frame, text="悬停日期:").pack(side=tk.LEFT, padx=(20, 5))
         hover_date_entry = ttk.Entry(hover_date_frame, textvariable=hover_date_var, width=15)
         hover_date_entry.pack(side=tk.LEFT)
+        hover_date_entry.bind("<FocusOut>", lambda e: validate_date_range())
 
         # 按钮框架
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         def save_settings():
-            self.config.set("show_hover_data", hover_var.get())
             if hover_var.get():
-                try:
-                    normalized_date = normalize_date_string(hover_date_var.get(), self.log)
-                    datetime.strptime(normalized_date, "%Y-%m-%d")
-                    self.config.set("hover_date", normalized_date)
-                except ValueError:
-                    messagebox.showerror("错误", "请输入有效的日期格式")
+                if not validate_date_format() or not validate_date_range():
                     return
+                self.config.set("show_hover_data", True)
+                self.config.set("hover_date", normalize_date_string(hover_date_var.get(), self.log))
+                # 设置悬停日期后，立即在图表上显示交叉线
+                self.update_chart_with_hover_date()
+            else:
+                self.config.set("show_hover_data", False)
+                self.config.set("hover_date", "")
+                # 清除悬停日期标记
+                self.remove_hover_date_marker()
             settings_window.destroy()
             self.log("导出图表设置已保存", "success")
 
@@ -1314,28 +1494,95 @@ class PerformanceBacktestTool:
         # 初始显示状态
         toggle_hover_date()
 
+    def update_chart_with_hover_date(self):
+        """更新图表，显示悬停日期的交叉线"""
+        if not self.config.get("show_hover_data") or not self.config.get("hover_date"):
+            return
+
+        try:
+            hover_date = datetime.strptime(self.config.get("hover_date"), "%Y-%m-%d")
+            if self.current_plot_data is not None:
+                # 找到最接近的日期
+                closest_idx = self.current_plot_data['日期'].sub(hover_date).abs().idxmin()
+                closest_row = self.current_plot_data.loc[closest_idx]
+                nav = closest_row['单位净值']
+                date = closest_row['日期']
+
+                # 清除之前的悬停标记
+                self.remove_hover_date_marker()
+
+                # 添加悬停十字线
+                self.hover_date_marker_x = self.ax.axvline(
+                    x=date,
+                    color=self.config.colors["chart_hover"],
+                    linestyle='--',
+                    linewidth=1,
+                    alpha=0.5,
+                    zorder=5
+                )
+
+                self.hover_date_marker_y = self.ax.axhline(
+                    y=nav,
+                    color=self.config.colors["chart_hover"],
+                    linestyle='--',
+                    linewidth=1,
+                    alpha=0.5,
+                    zorder=5
+                )
+
+                # 添加空心圆标记
+                self.hover_date_marker, = self.ax.plot(
+                    date,
+                    nav,
+                    marker='o',
+                    markersize=5,
+                    markerfacecolor='none',
+                    markeredgecolor=self.config.colors["chart_hover"],
+                    markeredgewidth=1.5,
+                    linestyle='',
+                    zorder=10
+                )
+
+                self.canvas.draw_idle()
+        except ValueError:
+            self.log("悬停日期格式无效", "error")
+
+    def remove_hover_date_marker(self):
+        """清除悬停日期标记"""
+        if hasattr(self, 'hover_date_marker_x') and self.hover_date_marker_x:
+            try:
+                self.hover_date_marker_x.remove()
+            except:
+                pass
+            self.hover_date_marker_x = None
+
+        if hasattr(self, 'hover_date_marker_y') and self.hover_date_marker_y:
+            try:
+                self.hover_date_marker_y.remove()
+            except:
+                pass
+            self.hover_date_marker_y = None
+
+        if hasattr(self, 'hover_date_marker') and self.hover_date_marker:
+            try:
+                self.hover_date_marker.remove()
+            except:
+                pass
+            self.hover_date_marker = None
+
+        self.canvas.draw_idle()
+
     def set_export_directory(self):
         """设置导出目录"""
         settings_window = tk.Toplevel(self.root)
         settings_window.title("导出目录设置")
-        settings_window.geometry("350x180")  # 减小高度
+        settings_window.geometry("210x160")  # 增加高度以容纳更多内容
         settings_window.resizable(False, False)
         settings_window.transient(self.root)
         settings_window.grab_set()
 
         # 设置窗口居中显示
-        settings_window.update_idletasks()
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-
-        win_width = 350
-        win_height = 180
-        x = root_x + (root_width // 2) - (win_width // 2)
-        y = root_y + (root_height // 2) - (win_height // 2)
-
-        settings_window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+        self.center_window_relative(settings_window, self.root)
 
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -1348,7 +1595,7 @@ class PerformanceBacktestTool:
                 custom_dir_frame.pack_forget()
                 self.config.set("export_directory", os.getcwd())
             else:
-                custom_dir_frame.pack(fill=tk.X, pady=(10, 0))
+                custom_dir_frame.pack(fill=tk.X, pady=(5, 0))
 
         current_dir_radio = ttk.Radiobutton(
             main_frame,
@@ -1360,8 +1607,6 @@ class PerformanceBacktestTool:
         current_dir_radio.pack(anchor=tk.W)
 
         # 自定义目录选项
-        custom_dir_var = tk.BooleanVar(value=not current_dir_var.get())
-
         custom_dir_radio = ttk.Radiobutton(
             main_frame,
             text="自定义保存位置:",
@@ -1369,33 +1614,49 @@ class PerformanceBacktestTool:
             value=False,
             command=toggle_directory_options
         )
-        custom_dir_radio.pack(anchor=tk.W, pady=(10, 0))
+        custom_dir_radio.pack(anchor=tk.W, pady=(5, 0))
 
-        # 自定义目录输入框和浏览按钮
+        # 自定义目录框架 - 简化版，只显示文件夹图标
         custom_dir_frame = ttk.Frame(main_frame)
         if not current_dir_var.get():
-            custom_dir_frame.pack(fill=tk.X, pady=(10, 0))
+            custom_dir_frame.pack(fill=tk.X, pady=(5, 0))
 
-        custom_dir_path = tk.StringVar(value=self.config.get("export_directory") if not current_dir_var.get() else "")
-        custom_dir_entry = ttk.Entry(custom_dir_frame, textvariable=custom_dir_path, width=40)
-        custom_dir_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(20, 5))
+        # 创建文件夹图标按钮
+        folder_icon = tk.PhotoImage(width=16, height=16)
+        # 简单的文件夹图标绘制
+        folder_icon.put("#4682B4", to=(4, 4, 12, 12))  # 天蓝色方块代替图标
+
+        # 存储工具提示对象的引用
+        folder_tooltip = None
 
         def browse_directory():
-            directory = filedialog.askdirectory(initialdir=custom_dir_path.get())
+            nonlocal folder_tooltip
+            directory = filedialog.askdirectory(initialdir=self.config.get("export_directory"))
             if directory:
-                custom_dir_path.set(directory)
+                self.config.set("export_directory", directory)
+                # 销毁旧的工具提示（如果存在）
+                if folder_tooltip:
+                    folder_tooltip.hidetip()
+                # 创建新的工具提示
+                folder_tooltip = ToolTip(folder_btn, directory)
 
-        ttt.Button(custom_dir_frame, text="浏览", command=browse_directory, width=8).pack(side=tk.RIGHT)
+        folder_btn = ttk.Button(
+            custom_dir_frame, 
+            image=folder_icon, 
+            command=browse_directory,
+            width=3
+        )
+        folder_btn.image = folder_icon  # 保持引用
+        folder_btn.pack(side=tk.LEFT, padx=(20, 5))
+        
+        # 初始工具提示
+        folder_tooltip = ToolTip(folder_btn, self.config.get("export_directory"))
 
         # 按钮框架
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         def save_settings():
-            if current_dir_var.get():
-                self.config.set("export_directory", os.getcwd())
-            else:
-                self.config.set("export_directory", custom_dir_path.get())
             settings_window.destroy()
             self.log(f"导出目录已设置为: {self.config.get('export_directory')}", "success")
 
@@ -1405,160 +1666,87 @@ class PerformanceBacktestTool:
         ttk.Button(button_frame, text="确定", command=save_settings).pack(side=tk.RIGHT, padx=(5, 0))
         ttk.Button(button_frame, text="取消", command=cancel_settings).pack(side=tk.RIGHT)
 
+        # 初始显示状态
+        toggle_directory_options()
+
     def set_log_window(self):
-        """设置日志窗口显示/隐藏"""
-        settings_window = tk.Toplevel(self.root)
-        settings_window.title("日志窗口设置")
-        settings_window.geometry("200x120")  # 减小高度
-        settings_window.resizable(False, False)
-        settings_window.transient(self.root)
-        settings_window.grab_set()
-
-        # 设置窗口居中显示
-        settings_window.update_idletasks()
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-
-        win_width = 200
-        win_height = 120
-        x = root_x + (root_width // 2) - (win_width // 2)
-        y = root_y + (root_height // 2) - (win_height // 2)
-
-        settings_window.geometry(f"{win_width}x{win_height}+{x}+{y}")
-
-        main_frame = ttk.Frame(settings_window, padding=10)
-        main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # 日志窗口选项
-        log_window_var = tk.BooleanVar(value=self.config.get("show_log_window"))
-
-        ttk.Radiobutton(
-            main_frame,
-            text="开启日志窗口",
-            variable=log_window_var,
-            value=True
-        ).pack(anchor=tk.W)
-
-        ttk.Radiobutton(
-            main_frame,
-            text="关闭日志窗口",
-            variable=log_window_var,
-            value=False
-        ).pack(anchor=tk.W, pady=(5, 0))
-
-        # 按钮框架
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
-
-        def save_settings():
-            self.config.set("show_log_window", log_window_var.get())
-
-            if log_window_var.get():
-                # 显示日志区域并调整窗口大小
-                self.log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
-                # 获取当前窗口位置和大小
-                x = self.root.winfo_x()
-                y = self.root.winfo_y()
-                # 设置新宽度（原宽度 + 日志区域宽度）
-                self.root.geometry(f"{500 + 300}x540+{x}+{y}")
-            else:
-                # 隐藏日志区域并调整窗口大小
-                self.log_frame.pack_forget()
-                # 获取当前窗口位置
-                x = self.root.winfo_x()
-                y = self.root.winfo_y()
-                # 恢复原宽度
-                self.root.geometry(f"500x540+{x}+{y}")
-
-            settings_window.destroy()
-            self.log(f"日志窗口已{'开启' if log_window_var.get() else '关闭'}", "success")
-
-        def cancel_settings():
-            settings_window.destroy()
-
-        ttk.Button(button_frame, text="确定", command=save_settings).pack(side=tk.RIGHT, padx=(5, 0))
-        ttk.Button(button_frame, text="取消", command=cancel_settings).pack(side=tk.RIGHT)
+        """切换日志窗口显示/隐藏"""
+        if self.config.get("show_log_window", True):
+            self.hide_log_window()
+            self.log("已关闭日志窗口", "success")
+        else:
+            self.show_log_window()
+            self.log("已开启日志窗口", "success")
 
     def set_textbox_settings(self):
         """设置提示框位置"""
         settings_window = tk.Toplevel(self.root)
         settings_window.title("提示框设置")
-        settings_window.geometry("200x150")  # 减小高度
+        settings_window.geometry("210x130")  # 调整大小
         settings_window.resizable(False, False)
         settings_window.transient(self.root)
         settings_window.grab_set()
 
         # 设置窗口居中显示
-        settings_window.update_idletasks()
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_width = self.root.winfo_width()
-        root_height = self.root.winfo_height()
-
-        win_width = 200
-        win_height = 150
-        x = root_x + (root_width // 2) - (win_width // 2)
-        y = root_y + (root_height // 2) - (win_height // 2)
-
-        settings_window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+        self.center_window_relative(settings_window, self.root)
 
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(main_frame, text="选择提示框位置:").pack(anchor=tk.W)
+        # 提示框启用选项
+        show_textbox_var = tk.BooleanVar(value=self.config.get("show_textbox", True))
 
-        # 位置选项 - 使用两行两列布局
-        position_var = tk.StringVar(value=self.config.get("max_min_position"))
+        def toggle_position_options():
+            if show_textbox_var.get():
+                position_frame.pack(fill=tk.X, pady=(10, 0))
+            else:
+                position_frame.pack_forget()
 
-        positions_frame = ttk.Frame(main_frame)
-        positions_frame.pack(fill=tk.X, pady=(5, 0))
+        ttk.Checkbutton(
+            main_frame,
+            text="开启/关闭提示框",
+            variable=show_textbox_var,
+            command=toggle_position_options
+        ).pack(anchor=tk.W)
 
-        # 第一行
-        top_frame = ttk.Frame(positions_frame)
-        top_frame.pack(fill=tk.X, pady=(0, 5))
+        # 位置选项
+        position_frame = ttk.Frame(main_frame)
+        if show_textbox_var.get():
+            position_frame.pack(fill=tk.X, pady=(10, 0))
         
-        ttk.Radiobutton(
-            top_frame,
-            text="左上",
-            variable=position_var,
-            value="top-left"
-        ).pack(side=tk.LEFT, padx=(0, 20))
+        ttk.Label(position_frame, text="位置:").pack(side=tk.LEFT, padx=(20, 5))
         
-        ttk.Radiobutton(
-            top_frame,
-            text="右上",
-            variable=position_var,
-            value="top-right"
-        ).pack(side=tk.LEFT)
-
-        # 第二行
-        bottom_frame = ttk.Frame(positions_frame)
-        bottom_frame.pack(fill=tk.X)
+        # 位置映射
+        position_map = {
+            "左上角": "top-left",
+            "右上角": "top-right",
+            "左下角": "bottom-left",
+            "右下角": "bottom-right"
+        }
         
-        ttk.Radiobutton(
-            bottom_frame,
-            text="左下",
-            variable=position_var,
-            value="bottom-left"
-        ).pack(side=tk.LEFT, padx=(0, 20))
+        # 反向映射，用于设置当前值
+        reverse_position_map = {v: k for k, v in position_map.items()}
         
-        ttk.Radiobutton(
-            bottom_frame,
-            text="右下",
-            variable=position_var,
-            value="bottom-right"
-        ).pack(side=tk.LEFT)
+        position_var = tk.StringVar(value=reverse_position_map.get(self.config.get("max_min_position", "top-left"), "左上角"))
+        position_combo = ttk.Combobox(
+            position_frame,
+            textvariable=position_var,
+            values=list(position_map.keys()),
+            state="readonly",
+            width=15
+        )
+        position_combo.pack(side=tk.LEFT)
 
         # 按钮框架
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         def save_settings():
-            self.config.set("max_min_position", position_var.get())
+            self.config.set("show_textbox", show_textbox_var.get())
+            if show_textbox_var.get():
+                self.config.set("max_min_position", position_map[position_var.get()])
             settings_window.destroy()
-            self.log(f"提示框位置已设置为: {position_var.get()}", "success")
+            self.log("提示框设置已保存", "success")
 
             # 重新绘制图表以应用新设置
             if self.df is not None and len(self.df) > 0:
@@ -1570,6 +1758,9 @@ class PerformanceBacktestTool:
         ttk.Button(button_frame, text="确定", command=save_settings).pack(side=tk.RIGHT, padx=(5, 0))
         ttk.Button(button_frame, text="取消", command=cancel_settings).pack(side=tk.RIGHT)
 
+        # 初始显示状态
+        toggle_position_options()
+
     def hide_log_window(self):
         """隐藏日志窗口"""
         if hasattr(self, 'log_frame'):
@@ -1580,6 +1771,8 @@ class PerformanceBacktestTool:
             # 恢复原宽度
             self.root.geometry(f"500x540+{x}+{y}")
             self.config.set("show_log_window", False)
+            # 更新菜单文本
+            self.settings_menu.entryconfig(3, label="开启日志")
 
 if __name__ == "__main__":
     root = tk.Tk()

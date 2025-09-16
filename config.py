@@ -1,4 +1,4 @@
-# config.py 完整代码（修改后）
+# config.py
 import os
 import tkinter as tk
 
@@ -35,13 +35,14 @@ class Config:
             "show_hover_data": False,  # 默认关闭悬停数据
             "hover_date": "",
             "export_directory": os.getcwd(),
-            "show_log_window": True,
+            "show_log_window": False,  # 修改为默认关闭日志窗口
+            "show_textbox": False,  # 添加默认关闭提示框
             "max_min_position": "top-left",  # top-left, top-right, bottom-left, bottom-right
-            "textbox_alpha": 0.9  # 提示框透明度
+            "textbox_alpha": 0.5  # 提示框透明度
         }
     
-    def get(self, key):
-        return self.settings.get(key)
+    def get(self, key, default=None):
+        return self.settings.get(key, default)
     
     def set(self, key, value):
         self.settings[key] = value
