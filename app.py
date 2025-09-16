@@ -1446,6 +1446,8 @@ class PerformanceBacktestTool:
                 validate_date_range()
             else:
                 hover_date_frame.pack_forget()
+                # 关闭悬停数据时，立即清除图表上的悬停标记
+                self.remove_hover_date_marker()
 
         hover_check = ttk.Checkbutton(
             main_frame,

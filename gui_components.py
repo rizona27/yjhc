@@ -253,14 +253,25 @@ def create_log_window(app, parent):
     log_notebook = ttk.Notebook(log_frame)
     log_notebook.pack(fill=tk.BOTH, expand=True)
 
+    # 设置Notebook样式
+    style = ttk.Style()
+    style.configure("TNotebook", background=app.config.colors["background"])
+    style.configure("TNotebook.Tab", 
+                   background=app.config.colors["group_box"],
+                   foreground=app.config.colors["text"],
+                   padding=[10, 2])
+    style.map("TNotebook.Tab", 
+             background=[("selected", app.config.colors["primary"])],
+             foreground=[("selected", "white")])
+
     success_log_frame = ttk.Frame(log_notebook)
     log_notebook.add(success_log_frame, text="成功")
     success_log_text = scrolledtext.ScrolledText(
         success_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg="#F5F8FA",
-        fg="#28A745",
+        bg=app.config.colors["card"],
+        fg=app.config.colors["success"],
         borderwidth=1,
         relief="solid"
     )
@@ -273,8 +284,8 @@ def create_log_window(app, parent):
         warning_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg="#F5F8FA",
-        fg="#FFC107",
+        bg=app.config.colors["card"],
+        fg=app.config.colors["warning"],
         borderwidth=1,
         relief="solid"
     )
@@ -287,8 +298,8 @@ def create_log_window(app, parent):
         info_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg="#F5F8FA",
-        fg="#17A2B8",
+        bg=app.config.colors["card"],
+        fg=app.config.colors["info"],
         borderwidth=1,
         relief="solid"
     )
@@ -301,8 +312,8 @@ def create_log_window(app, parent):
         error_log_frame,
         wrap=tk.WORD,
         font=("Courier", 8),
-        bg="#F5F8FA",
-        fg="#DC3545",
+        bg=app.config.colors["card"],
+        fg=app.config.colors["error"],
         borderwidth=1,
         relief="solid"
     )

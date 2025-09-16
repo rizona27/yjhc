@@ -26,6 +26,10 @@ class Config:
             "group_box": "#E6F0F8",
             "border": "#A0C0E0",
             "input_bg": "#FFFFFF",
+            "success": "#28A745",
+            "warning": "#FFC107",
+            "error": "#DC3545",
+            "info": "#17A2B8",
             "placeholder": "#AAAAAA",
             "max_color": "#E74C3C",
             "min_color": "#27AE60"
