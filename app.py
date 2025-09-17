@@ -4,18 +4,24 @@ from tkinter import ttk, filedialog, messagebox
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from datetime import datetime
-import matplotlib.dates as mdates
-from matplotlib.ticker import StrMethodFormatter, MaxNLocator
 import sys
 import os
 import pandas as pd
 import warnings
+import json
+import hashlib
+import uuid
 
 # 导入自定义模块
 from core import PerformanceAnalysis
 from utils import setup_fonts, normalize_date_string, detect_file_type, read_csv_file, read_excel_file, log_to_text_widget, cleanup_exit, log_message
 from gui_components import create_menu_bar, create_main_interface, create_log_window
 from config import Config
+from tooltip import ToolTip
+from chart_utils import ChartUtils
+from event_handlers import EventHandlers
+from window_utils import WindowUtils
+from activation import ActivationManager
 
 # 忽略openpyxl的样式警告
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.stylesheet")
@@ -23,42 +29,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.
 # 全局变量跟踪打开的窗口数
 OPEN_WINDOWS = 0
 MAX_WINDOWS = 1
-
-# 在类定义前添加 ToolTip 类
-class ToolTip:
-    def __init__(self, widget, text):
-        self.widget = widget
-        self.text = text
-        self.tooltip = None
-        self.widget.bind("<Enter>", self.enter)
-        self.widget.bind("<Leave>", self.leave)
-
-    def enter(self, event=None):
-        x, y, _, _ = self.widget.bbox("insert")
-        x += self.widget.winfo_rootx() + 25
-        y += self.widget.winfo_rooty() + 25
-        self.tooltip = tk.Toplevel(self.widget)
-        self.tooltip.wm_overrideredirect(True)
-        self.tooltip.wm_geometry(f"+{x}+{y}")
-        label = tk.Label(self.tooltip, text=self.text, justify=tk.LEFT,
-                         background="#ffffe0", relief=tk.SOLID, borderwidth=1,
-                         wraplength=180)
-        label.pack()
-
-    def leave(self, event=None):
-        if self.tooltip:
-            self.tooltip.destroy()
-            self.tooltip = None
-
-    def showtip(self):
-        self.enter()
-
-    def hidetip(self):
-        self.leave()
-
-    def update_text(self, new_text):
-        """更新工具提示文本"""
-        self.text = new_text
 
 class PerformanceBacktestTool:
     def __init__(self, root):
@@ -87,6 +57,10 @@ class PerformanceBacktestTool:
 
         # 初始化配置
         self.config = Config()
+        
+        # 初始化激活管理器
+        self.activation_manager = ActivationManager()
+        self.is_activated = self.activation_manager.check_activation()
 
         self.df = None
         self.chart_title = "净值趋势图"
@@ -98,13 +72,6 @@ class PerformanceBacktestTool:
         # 修正: 初始化最高点和最低点信息，防止在没有数据时报错
         self.hover_annotation = None
         # 修正：为十字虚线和空心圆添加新的引用
-        self.hover_line_x = None
-        self.hover_line_y = None
-        self.hover_marker = None
-        self.hover_text_obj = None
-        self.hover_date_marker = None  # 新增：用于存储设置的悬停日期标记
-        self.max_min_text_obj = [] # 用于存储 Max/Min 文本对象
-
         self.max_value = None
         self.min_value = None
         self.max_date_str = None
@@ -189,11 +156,16 @@ class PerformanceBacktestTool:
         self.canvas = FigureCanvasTkAgg(self.figure, self.components["chart_frame"])
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        self.canvas.mpl_connect('motion_notify_event', self.on_hover)
-        self.canvas.mpl_connect('axes_leave_event', self.on_leave)
+        # 初始化工具类
+        self.chart_utils = ChartUtils(self)
+        self.event_handlers = EventHandlers(self)
+        self.window_utils = WindowUtils(self)
+
+        self.canvas.mpl_connect('motion_notify_event', self.chart_utils.on_hover)
+        self.canvas.mpl_connect('axes_leave_event', self.chart_utils.on_leave)
 
         setup_fonts()
-        self.initialize_chart()
+        self.chart_utils.initialize_chart()
 
         # 创建日志窗口（放在右侧框架中）
         self.log_texts = create_log_window(self, self.log_frame)
@@ -205,37 +177,64 @@ class PerformanceBacktestTool:
             self.hide_log_window()
 
         # 设置窗口居中显示
-        self.center_window(self.root)
+        self.window_utils.center_window(self.root)
+        
+        # 根据激活状态更新界面
+        self.update_activation_status()
         
         self.log("欢迎使用业绩表现回测工具", "success")
-        self.log("请导入文件开始使用", "success")
+        if not self.is_activated:
+            self.log("软件未激活，请前往关于->说明中输入激活码", "warning")
+            self.log("临时激活码: 0315 (有效期7天)", "info")
+        else:
+            self.log("软件已激活，请导入文件开始使用", "success")
         self.log("rizona.cn@gmail.com", "success")
+
+    def update_activation_status(self):
+        """根据激活状态更新界面"""
+        if not self.is_activated:
+            # 禁用设置菜单
+            self.settings_menu.entryconfig(0, state=tk.DISABLED)  # 导出图表设置
+            self.settings_menu.entryconfig(1, state=tk.DISABLED)  # 导出目录设置
+            self.settings_menu.entryconfig(2, state=tk.DISABLED)  # 提示框设置
+            self.settings_menu.entryconfig(3, state=tk.DISABLED)  # 日志窗口
+            
+            # 禁用自定义分析按钮
+            self.components["btn_custom"].config(state=tk.DISABLED)
+            
+            # 禁用全览按钮
+            self.components["btn_reset"].config(state=tk.DISABLED)
+            
+            # 启用日期输入框（允许查看但不能分析）
+            self.components["start_entry"].config(state=tk.NORMAL)
+            self.components["end_entry"].config(state=tk.NORMAL)
+
+            # 启用重置按钮
+            self.components["btn_reset_app"].config(state=tk.NORMAL)
+
+        else:
+            # 启用设置菜单
+            self.settings_menu.entryconfig(0, state=tk.NORMAL)
+            self.settings_menu.entryconfig(1, state=tk.NORMAL)
+            self.settings_menu.entryconfig(2, state=tk.NORMAL)
+            self.settings_menu.entryconfig(3, state=tk.NORMAL)
+            
+            # 启用自定义分析按钮
+            self.components["btn_custom"].config(state=tk.NORMAL)
+            self.components["btn_reset"].config(state=tk.NORMAL)
+            self.components["btn_reset_app"].config(state=tk.NORMAL)
+            
+            # 启用日期输入框
+            self.components["start_entry"].config(state=tk.NORMAL)
+            self.components["end_entry"].config(state=tk.NORMAL)
 
     def center_window(self, window):
         """将窗口居中显示"""
-        window.update_idletasks()
-        width = window.winfo_width()
-        height = window.winfo_height()
-        x = (window.winfo_screenwidth() // 2) - (width // 2)
-        y = (window.winfo_screenheight() // 2) - (height // 2)
-        window.geometry(f"{width}x{height}+{x}+{y}")
+        self.window_utils.center_window(window)
 
     def center_window_relative(self, window, parent):
         """将子窗口居中显示在父窗口中心"""
-        parent.update_idletasks()
-        parent_x = parent.winfo_x()
-        parent_y = parent.winfo_y()
-        parent_width = parent.winfo_width()
-        parent_height = parent.winfo_height()
-        
-        window.update_idletasks()
-        win_width = window.winfo_width()
-        win_height = window.winfo_height()
-        
-        x = parent_x + (parent_width // 2) - (win_width // 2)
-        y = parent_y + (parent_height // 2) - (win_height // 2)
-        
-        window.geometry(f"{win_width}x{win_height}+{x}+{y}")
+        self.window_utils.center_window_relative(window, parent)
 
     def update_log_menu_label(self):
         """更新日志菜单项的标签"""
@@ -266,6 +265,10 @@ class PerformanceBacktestTool:
 
     def set_log_window(self):
         """切换日志窗口显示/隐藏"""
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         if self.config.get("show_log_window", True):
             self.hide_log_window()
             self.log("已关闭日志窗口", "success")
@@ -280,91 +283,25 @@ class PerformanceBacktestTool:
                 log_to_text_widget(log_text, message, message_type)
 
     def on_start_focus_in(self, event):
-        if self.components["start_entry"].get() == "YYYY-MM-DD":
-            self.components["start_entry"].delete(0, tk.END)
-            self.components["start_entry"].configure(foreground=self.config.colors["text"])
+        self.event_handlers.on_start_focus_in(event)
 
     def on_start_focus_out(self, event):
-        self._validate_dates(self.components["start_entry"])
+        self.event_handlers.on_start_focus_out(event)
 
     def on_start_return(self, event):
-        if self._validate_dates(self.components["start_entry"]):
-            if self.components["end_entry"].get() and self.components["end_entry"].get() != "YYYY-MM-DD":
-                self.custom_analysis()
-            else:
-                self.components["end_entry"].focus()
-                self.components["end_entry"].select_range(0, tk.END)
+        self.event_handlers.on_start_return(event)
 
     def on_end_focus_in(self, event):
-        if self.components["end_entry"].get() == "YYYY-MM-DD":
-            self.components["end_entry"].delete(0, tk.END)
-            self.components["end_entry"].configure(foreground=self.config.colors["text"])
+        self.event_handlers.on_end_focus_in(event)
 
     def on_end_focus_out(self, event):
-        self._validate_dates(self.components["end_entry"])
+        self.event_handlers.on_end_focus_out(event)
 
     def on_end_return(self, event):
-        if self._validate_dates(self.components["end_entry"]):
-            if (self.components["start_entry"].get() and self.components["start_entry"].get() != "YYYY-MM-DD" and
-                self.components["end_entry"].get() and self.components["end_entry"].get() != "YYYY-MM-DD"):
-                self.custom_analysis()
-            else:
-                self.components["start_entry"].focus()
-                self.components["start_entry"].select_range(0, tk.END)
-
-    def _validate_dates(self, entry):
-        date_str = entry.get()
-        if date_str == "YYYY-MM-DD" or not date_str:
-            entry.configure(foreground=self.config.colors["placeholder"])
-            return False
-
-        try:
-            normalized_date = normalize_date_string(date_str, self.log)
-            datetime.strptime(normalized_date, "%Y-%m-%d")
-            entry.delete(0, tk.END)
-            entry.insert(0, normalized_date)
-            entry.configure(foreground=self.config.colors["text"])
-            self.log(f"日期 '{date_str}' 格式校验通过。", "success")
-            return True
-        except ValueError:
-            # 居中显示错误提示
-            error_window = tk.Toplevel(self.root)
-            error_window.title("日期格式错误")
-            error_window.geometry("400x100")
-            error_window.resizable(False, False)
-            error_window.transient(self.root)
-            error_window.grab_set()
-            
-            # 居中显示错误窗口
-            self.center_window_relative(error_window, self.root)
-            
-            tk.Label(error_window, text=f"无效的日期格式: '{date_str}'。请使用 YYYY-MM-DD 或 YYYYMMDD 格式。", 
-                    padx=20, pady=20).pack()
-            tk.Button(error_window, text="确定", command=error_window.destroy, width=10).pack(pady=10)
-            
-            entry.configure(foreground="red")
-            self.log(f"日期 '{date_str}' 格式校验失败。", "error")
-            return False
-        except Exception as e:
-            # 居中显示错误提示
-            error_window = tk.Toplevel(self.root)
-            error_window.title("日期格式错误")
-            error_window.geometry("400x100")
-            error_window.resizable(False, False)
-            error_window.transient(self.root)
-            error_window.grab_set()
-            
-            # 居中显示错误窗口
-            self.center_window_relative(error_window, self.root)
-            
-            tk.Label(error_window, text=f"日期处理出错: {str(e)}", 
-                    padx=20, pady=20).pack()
-            tk.Button(error_window, text="确定", command=error_window.destroy, width=10).pack(pady=10)
-            
-            self.log(f"日期处理出错: {str(e)}", "error")
-            return False
+        self.event_handlers.on_end_return(event)
 
     def reset_application(self):
+        # 移除激活检查，允许未激活状态下重置应用
         self.df = None
         self.full_view_data = None
         self.current_plot_data = None  # 重置当前图表数据
@@ -375,7 +312,7 @@ class PerformanceBacktestTool:
         self.max_date_str = None
         self.min_date_str = None
 
-        self.initialize_chart()
+        self.chart_utils.initialize_chart()
 
         for item in self.components["result_tree"].get_children():
             self.components["result_tree"].delete(item)
@@ -421,94 +358,16 @@ class PerformanceBacktestTool:
         self.log("rizona.cn@gmail.com", "success")
 
     def show_readme(self):
-        readme_window = tk.Toplevel(self.root)
-        readme_window.title("说明")
-        readme_window.geometry("300x200")
-        readme_window.resizable(False, False)
-        readme_window.configure(bg=self.config.colors["background"])
-        readme_window.transient(self.root)
+        self.window_utils.show_readme(self)
 
-        # 设置窗口居中显示
-        self.center_window_relative(readme_window, self.root)
-        readme_window.deiconify()  # 显示窗口
-
-        readme_window.grab_set()
-
-        main_frame = ttk.Frame(readme_window)
-        main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-
-        # 使用Label替代Text，使文字不可选中
-        readme_text = """
-1. 导入数据
-  - 支持csv、xls、xlsx格式
-  - 自动识别列头并排序
-
-2. 数据分析
-  - 自动计算固定周期业绩
-  - 自动计算年化收益率、最大回撤
-  - 支持自定义日期区间分析
-
-3. 净值趋势图
-  - 自动生成净值趋势图
-  - 标记最高点和最低点
-  - 鼠标悬停可显示日期和净值
-
-4. 导出图表
-  - 可以区间命名导出趋势图
-
-5. 其他
-  - 恢复全览：返回完整数据视图
-  - 系统日志：记录程序运行过程
-
-提示：
-  - 已支持多种日期格式：
-  - [YYYY-MM-DD]
-  - [YYYY/MM/DD]
-  - [YYYYMMDD]
-  - Mailto: rizona.cn@gmail.com
-"""
-        text_label = tk.Label(
-            main_frame,
-            text=readme_text,
-            justify=tk.LEFT,
-            bg=self.config.colors["card"],
-            fg=self.config.colors["text"],
-            font=("Helvetica", 9),
-            borderwidth=1,
-            relief="solid",
-            padx=10,
-            pady=10
-        )
-        text_label.pack(fill=tk.BOTH, expand=True)
-
-        author_frame = ttk.Frame(main_frame)
-        author_frame.pack(fill=tk.X, pady=(0, 5))
-
-        author_label = ttk.Label(
-            author_frame,
-            text="Arizona.cn@gmail.com",
-            font=("Helvetica", 10),
-            foreground=self.config.colors["accent"],
-            background=self.config.colors["card"]
-        )
-        author_label.pack(side=tk.BOTTOM)
-
-        btn_frame = ttk.Frame(main_frame)
-        btn_frame.pack(fill=tk.X, pady=(5, 0))
-
-        close_btn = ttk.Button(
-            btn_frame,
-            text="关闭",
-            command=lambda: self.close_readme(readme_window),
-            style="TButton"
-        )
-        close_btn.pack(pady=5, ipadx=10, ipady=3)
+    def show_activation(self):
+        self.window_utils.show_activation(self)
 
     def close_readme(self, window):
-        window.grab_release()
-        window.destroy()
+        self.window_utils.close_readme(window)
 
     def import_data(self):
+        # 移除激活检查，允许未激活状态下导入文件
         try:
             file_path = filedialog.askopenfilename(
                 title="选择数据文件",
@@ -669,6 +528,10 @@ class PerformanceBacktestTool:
         self.log("固定周期业绩计算完成", "success")
 
     def custom_analysis(self):
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         if self.df is None or len(self.df) == 0:
             messagebox.showwarning("警告", "请先导入数据文件！")
             self.log("自定义分析失败: 无数据", "warning")
@@ -683,7 +546,7 @@ class PerformanceBacktestTool:
             return
 
         # 在点击分析按钮时再次进行最终校验
-        if not self._validate_dates(self.components["start_entry"]) or not self._validate_dates(self.components["end_entry"]):
+        if not self.event_handlers._validate_dates(self.components["start_entry"]) or not self.event_handlers._validate_dates(self.components["end_entry"]):
             self.log("日期格式错误，分析中止。", "error")
             return
 
@@ -723,6 +586,10 @@ class PerformanceBacktestTool:
             self.log(f"日期处理出错: {str(e)}", "error")
 
     def reset_to_full_view(self):
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         if self.df is None or self.full_view_data is None:
             return
 
@@ -767,42 +634,42 @@ class PerformanceBacktestTool:
         self.current_plot_data = df_plot.copy()
 
         # 每次绘制新图表前，清除旧的悬停标注对象和标记
-        if self.hover_line_x:
+        if self.chart_utils.hover_line_x:
             try:
-                self.hover_line_x.remove()
+                self.chart_utils.hover_line_x.remove()
             except:
                 pass
-            self.hover_line_x = None
+            self.chart_utils.hover_line_x = None
 
-        if self.hover_line_y:
+        if self.chart_utils.hover_line_y:
             try:
-                self.hover_line_y.remove()
+                self.chart_utils.hover_line_y.remove()
             except:
                 pass
-            self.hover_line_y = None
+            self.chart_utils.hover_line_y = None
 
-        if self.hover_marker:
+        if self.chart_utils.hover_marker:
             try:
-                self.hover_marker.remove()
+                self.chart_utils.hover_marker.remove()
             except:
                 pass
-            self.hover_marker = None
+            self.chart_utils.hover_marker = None
 
-        if self.hover_text_obj:
+        if self.chart_utils.hover_text_obj:
             try:
-                self.hover_text_obj.remove()
+                self.chart_utils.hover_text_obj.remove()
             except:
                 pass
-            self.hover_text_obj = None
+            self.chart_utils.hover_text_obj = None
 
         # 每次重绘图表，都清空并重新绘制 Max/Min 文本和标记
-        if self.max_min_text_obj:
-            for text_obj in self.max_min_text_obj:
+        if self.chart_utils.max_min_text_obj:
+            for text_obj in self.chart_utils.max_min_text_obj:
                 try:
                     text_obj.remove()
                 except:
                     pass
-            self.max_min_text_obj = []
+            self.chart_utils.max_min_text_obj = []
 
         unit_color = self.config.colors["chart_line"]
 
@@ -913,447 +780,96 @@ class PerformanceBacktestTool:
                 va=min_va,
                 zorder=10
             )
-            self.max_min_text_obj = [max_text_obj, min_text_obj]
+            self.chart_utils.max_min_text_obj = [max_text_obj, min_text_obj]
 
-        date_range = df_plot['日期'].max() - df_plot['日期'].min()
-        days = date_range.days
-
-        if days <= 30:
-            date_format = '%m-%d'
-            interval = max(1, int(days/7))
-            locator = mdates.DayLocator(interval=interval)
-        elif days <= 180:
-            date_format = '%m-%d'
-            interval = max(1, int(days/10))
-            locator = mdates.DayLocator(interval=interval)
-        elif days <= 365:
-            date_format = '%m-%d'
-            locator = mdates.MonthLocator()
-        else:
-            date_format = '%Y-%m'
-            locator = mdates.MonthLocator(interval=3)
-
-        self.ax.xaxis.set_major_locator(locator)
-        self.ax.xaxis.set_major_formatter(mdates.DateFormatter(date_format))
-
-        min_nav = df_plot['单位净值'].min()
-        max_nav = df_plot['单位净值'].max()
-        nav_range = max_nav - min_nav
-
-        if nav_range > 0:
-            buffer = nav_range * 0.05
-            self.ax.set_ylim(min_nav - buffer, max_nav + buffer)
-
-        self.ax.yaxis.set_major_locator(MaxNLocator(prune='both', nbins=5))
-
-        self.ax.grid(True,
-                    linestyle='--',
-                    alpha=0.6,
-                    color=self.config.colors["chart_grid"])
-
-        self.ax.tick_params(axis='x',
-                           which='major',
-                           labelsize=4,
-                           colors=self.config.colors["text"])
-        self.ax.tick_params(axis='y',
-                           which='major',
-                           labelsize=5,
-                           colors=self.config.colors["text"])
-        self.ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.4f}'))
-
-        self.ax.spines['top'].set_visible(False)
-        self.ax.spines['right'].set_visible(False)
-        self.ax.spines['left'].set_color(self.config.colors["text_light"])
-        self.ax.spines['bottom'].set_color(self.config.colors["text_light"])  
-
-        plt.setp(self.ax.get_xticklabels(), rotation=30, ha='right', fontsize=4)
-
-        self.figure.subplots_adjust(left=0.10, right=0.95, top=0.92, bottom=0.35)
-        self.figure.tight_layout(pad=1.5)
+        # 设置图表格式
+        self.chart_utils.setup_chart_formatting(df_plot)
 
         self.canvas.draw()
         self.log("净值趋势图生成完成", "success")
 
     def export_chart(self):
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         if not hasattr(self, 'figure') or not self.figure:
             messagebox.showwarning("警告", "没有可导出的图表")
             return
 
-        # 如果设置了自定义导出目录，直接保存
-        export_dir = self.config.get("export_directory")
-        if export_dir != os.getcwd():
-            if not os.path.exists(export_dir):
-                os.makedirs(export_dir)
+        # 使用当前程序目录
+        export_dir = os.getcwd()
+        if not os.path.exists(export_dir):
+            os.makedirs(export_dir)
 
-            if self.current_start_date and self.current_end_date:
-                if self.current_start_date.year == self.current_end_date.year:
-                    filename = (
-                        f"{self.current_start_date.year}--"
-                        f"{self.current_start_date.strftime('%m%d')}～"
-                        f"{self.current_end_date.strftime('%m%d')}净值趋势图.png"
-                    )
-                else:
-                    filename = (
-                        f"{self.current_start_date.strftime('%y%m%d')}～"
-                        f"{self.current_end_date.strftime('%y%m%d')}净值趋势图.png"
-                    )
+        if self.current_start_date and self.current_end_date:
+            if self.current_start_date.year == self.current_end_date.year:
+                filename = (
+                    f"{self.current_start_date.year}--"
+                    f"{self.current_start_date.strftime('%m%d')}～"
+                    f"{self.current_end_date.strftime('%m%d')}净值趋势图.png"
+                )
             else:
-                filename = "净值趋势图.png"
-
-            file_path = os.path.join(export_dir, filename)
-
-            try:
-                # 如果启用了悬停数据显示，添加悬停数据
-                if self.config.get("show_hover_data") and self.config.get("hover_date"):
-                    try:
-                        hover_date = datetime.strptime(self.config.get("hover_date"), "%Y-%m-%d")
-                        if self.current_plot_data is not None:
-                            # 找到最接近的日期
-                            closest_idx = self.current_plot_data['日期'].sub(hover_date).abs().idxmin()
-                            closest_row = self.current_plot_data.loc[closest_idx]
-                            nav = closest_row['单位净值']
-                            date = closest_row['日期']
-
-                            # 添加悬停十字线但不添加文本
-                            self.ax.axvline(
-                                x=date,
-                                color=self.config.colors["chart_hover"],
-                                linestyle='--',
-                                linewidth=1,
-                                alpha=0.5,
-                                zorder=5
-                            )
-
-                            self.ax.axhline(
-                                y=nav,
-                                color=self.config.colors["chart_hover"],
-                                linestyle='--',
-                                linewidth=1,
-                                alpha=0.5,
-                                zorder=5
-                            )
-
-                            # 添加空心圆标记
-                            self.ax.plot(
-                                date,
-                                nav,
-                                marker='o',
-                                markersize=5,
-                                markerfacecolor='none',
-                                markeredgecolor=self.config.colors["chart_hover"],
-                                markeredgewidth=1.5,
-                                linestyle='',
-                                zorder=10
-                            )
-                    except ValueError:
-                        self.log("悬停日期格式无效，将不显示悬停数据", "warning")
-
-                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
-                self.log(f"图表已导出: {file_path}", "success")
-            except Exception as e:
-                messagebox.showerror("错误", f"保存图表时出错:\n{str(e)}")
-                self.log(f"导出图表失败: {str(e)}", "error")
+                filename = (
+                    f"{self.current_start_date.strftime('%y%m%d')}～"
+                    f"{self.current_end_date.strftime('%y%m%d')}净值趋势图.png"
+                )
         else:
-            # 使用原来的文件选择对话框
-            if self.current_start_date and self.current_end_date:
-                if self.current_start_date.year == self.current_end_date.year:
-                    filename = (
-                        f"{self.current_start_date.year}--"
-                        f"{self.current_start_date.strftime('%m%d')}～"
-                        f"{self.current_end_date.strftime('%m%d')}净值趋势图"
-                    )
-                else:
-                    filename = (
-                        f"{self.current_start_date.strftime('%y%m%d')}～"
-                        f"{self.current_end_date.strftime('%y%m%d')}净值趋势图"
-                    )
-            else:
-                filename = "净值趋势图"
+            filename = "净值趋势图.png"
 
-            # 使用配置的导出目录
-            initial_dir = self.config.get("export_directory")
-            file_path = filedialog.asksaveasfilename(
-                defaultextension=".png",
-                filetypes=[("PNG文件", "*.png"), ("所有文件", "*.*")],
-                title="保存图表",
-                initialdir=initial_dir,
-                initialfile=filename
-            )
-
-            if not file_path:
-                return
-
-            try:
-                # 如果启用了悬停数据显示，添加悬停数据
-                if self.config.get("show_hover_data") and self.config.get("hover_date"):
-                    try:
-                        hover_date = datetime.strptime(self.config.get("hover_date"), "%Y-%m-%d")
-                        if self.current_plot_data is not None:
-                            # 找到最接近的日期
-                            closest_idx = self.current_plot_data['日期'].sub(hover_date).abs().idxmin()
-                            closest_row = self.current_plot_data.loc[closest_idx]
-                            nav = closest_row['单位净值']
-                            date = closest_row['日期']
-
-                            # 添加悬停十字线但不添加文本
-                            self.ax.axvline(
-                                x=date,
-                                color=self.config.colors["chart_hover"],
-                                linestyle='--',
-                                linewidth=1,
-                                alpha=0.5,
-                                zorder=5
-                            )
-
-                            self.ax.axhline(
-                                y=nav,
-                                color=self.config.colors["chart_hover"],
-                                linestyle='--',
-                                linewidth=1,
-                                alpha=0.5,
-                                zorder=5
-                            )
-
-                            # 添加空心圆标记
-                            self.ax.plot(
-                                date,
-                                nav,
-                                marker='o',
-                                markersize=5,
-                                markerfacecolor='none',
-                                markeredgecolor=self.config.colors["chart_hover"],
-                                markeredgewidth=1.5,
-                                linestyle='',
-                                zorder=10
-                            )
-                    except ValueError:
-                        self.log("悬停日期格式无效，将不显示悬停数据", "warning")
-
-                self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
-                self.log(f"图表已导出: {file_path}", "success")
-            except Exception as e:
-                messagebox.showerror("错误", f"保存图表时出错:\n{str(e)}")
-                self.log(f"导出图表失败: {str(e)}", "error")
-
-    def initialize_chart(self):
-        self.ax.clear()
-        self.current_plot_data = None  # 清空当前图表数据
-
-        if self.hover_line_x:
-            try:
-                self.hover_line_x.remove()
-            except:
-                pass
-            self.hover_line_x = None
-
-        if self.hover_line_y:
-            try:
-                self.hover_line_y.remove()
-            except:
-                pass
-            self.hover_line_y = None
-
-        if self.hover_marker:
-            try:
-                self.hover_marker.remove()
-            except:
-                pass
-            self.hover_marker = None
-
-        if self.hover_text_obj:
-            try:
-                self.hover_text_obj.remove()
-            except:
-                pass
-            self.hover_text_obj = None
-
-        if self.max_min_text_obj:
-            for text_obj in self.max_min_text_obj:
-                try:
-                    text_obj.remove()
-                except:
-                    pass
-            self.max_min_text_obj = []
-
-        self.figure.subplots_adjust(left=0.10, right=0.95, top=0.92, bottom=0.35)
-        self.figure.tight_layout(pad=1.5)
-
-        self.ax.tick_params(axis='x',
-                           which='major',
-                           labelsize=4,
-                           colors=self.config.colors["text"])
-        self.ax.tick_params(axis='y',
-                           which='major',
-                           labelsize=5,
-                           colors=self.config.colors["text"])
-        self.ax.yaxis.set_major_formatter(StrMethodFormatter('{x:,.4f}'))
-        self.ax.yaxis.set_major_locator(MaxNLocator(prune='both', nbins=5))
-
-        self.ax.grid(True,
-                    linestyle='--',
-                    alpha=0.6,
-                    color=self.config.colors["chart_grid"])
-
-        self.ax.spines['top'].set_visible(False)
-        self.ax.spines['right'].set_visible(False)
-        self.ax.spines['left'].set_color(self.config.colors["text_light"])
-        self.ax.spines['bottom'].set_color(self.config.colors["text_light"])  
-
-        plt.setp(self.ax.get_xticklabels(), rotation=30, ha='right', fontsize=4)
-
-        self.canvas.draw()
-
-    def on_hover(self, event):
-        """处理鼠标悬停事件，显示日期和净值，并绘制十字虚线"""
-        # 如果有设置的悬停日期，则不显示鼠标悬停数据
-        if self.config.get("show_hover_data") and self.config.get("hover_date"):
-            return
-            
-        # 使用当前显示的图表数据而不是完整数据集
-        if self.current_plot_data is None or event.inaxes != self.ax:
-            self.on_leave(event)
-            return
+        file_path = os.path.join(export_dir, filename)
 
         try:
-            # 移除旧的悬停标注和标记
-            if self.hover_text_obj:
-                self.hover_text_obj.remove()
-                self.hover_text_obj = None
-            if self.hover_line_x:
-                self.hover_line_x.remove()
-                self.hover_line_x = None
-            if self.hover_line_y:
-                self.hover_line_y.remove()
-                self.hover_line_y = None
-            if self.hover_marker:
-                self.hover_marker.remove()
-                self.hover_marker = None
+            # 如果启用了悬停数据显示，添加悬停数据
+            if self.config.get("show_hover_data") and self.config.get("hover_date"):
+                try:
+                    hover_date = datetime.strptime(self.config.get("hover_date"), "%Y-%m-%d")
+                    if self.current_plot_data is not None:
+                        # 找到最接近的日期
+                        closest_idx = self.current_plot_data['日期'].sub(hover_date).abs().idxmin()
+                        closest_row = self.current_plot_data.loc[closest_idx]
+                        nav = closest_row['单位净值']
+                        date = closest_row['日期']
 
-            xdata_date = mdates.num2date(event.xdata).replace(tzinfo=None)
+                        # 添加悬停十字线但不添加文本
+                        self.ax.axvline(
+                            x=date,
+                            color=self.config.colors["chart_hover"],
+                            linestyle='--',
+                            linewidth=1,
+                            alpha=0.5,
+                            zorder=5
+                        )
 
-            # 找到最近的日期数据点 - 使用当前显示的图表数据
-            closest_idx = self.current_plot_data['日期'].sub(xdata_date).abs().idxmin()
+                        self.ax.axhline(
+                            y=nav,
+                            color=self.config.colors["chart_hover"],
+                            linestyle='--',
+                            linewidth=1,
+                            alpha=0.5,
+                            zorder=5
+                        )
 
-            closest_row = self.current_plot_data.loc[closest_idx]
-            nav = closest_row['单位净值']
-            date = closest_row['日期']
+                        # 添加空心圆标记
+                        self.ax.plot(
+                            date,
+                            nav,
+                            marker='o',
+                            markersize=5,
+                            markerfacecolor='none',
+                            markeredgecolor=self.config.colors["chart_hover"],
+                            markeredgewidth=1.5,
+                            linestyle='',
+                            zorder=10
+                        )
+                except ValueError:
+                    self.log("悬停日期格式无效，将不显示悬停数据", "warning")
 
-            # 绘制新的十字虚线 (透明度设为0.5)
-            self.hover_line_x = self.ax.axvline(
-                x=date,
-                color=self.config.colors["chart_hover"],
-                linestyle='--',
-                linewidth=1,
-                alpha=0.5,
-                zorder=5
-            )
-
-            self.hover_line_y = self.ax.axhline(
-                y=nav,
-                color=self.config.colors["chart_hover"],
-                linestyle='--',
-                linewidth=1,
-                alpha=0.5,
-                zorder=5
-            )
-
-            # 绘制新的空心圆
-            self.hover_marker, = self.ax.plot(
-                date,
-                nav,
-                marker='o',
-                markersize=5,
-                markerfacecolor='none',
-                markeredgecolor=self.config.colors["chart_hover"],
-                markeredgewidth=1.5,
-                linestyle='',
-                zorder=10
-            )
-
-            # 检查是否显示文本框
-            if self.config.get("show_textbox", True):
-                # 根据Max/Min位置确定Hover文本位置
-                position = self.config.get("max_min_position")
-                alpha = self.config.get("textbox_alpha")
-
-                # 动态计算文本位置，避免重叠
-                if position == "top-left":
-                    hover_x, hover_y = 0.02, 0.75  # 调整Y位置，避免与Max/Min重叠
-                    hover_ha, hover_va = 'left', 'top'
-                elif position == "top-right":
-                    hover_x, hover_y = 0.98, 0.75  # 调整Y位置，避免与Max/Min重叠
-                    hover_ha, hover_va = 'right', 'top'
-                elif position == "bottom-left":
-                    hover_x, hover_y = 0.02, 0.25  # 调整Y位置，避免与Max/Min重叠
-                    hover_ha, hover_va = 'left', 'bottom'
-                elif position == "bottom-right":
-                    hover_x, hover_y = 0.98, 0.25  # 调整Y位置，避免与Max/Min重叠
-                    hover_ha, hover_va = 'right', 'bottom'
-
-                # 更新左上角的标注文本
-                hover_data_text = f'Hover: {nav:.4f} ({date.strftime("%y/%m/%d")})'
-
-                # 修正: 统一Hover文本颜色为橙色
-                self.hover_text_obj = self.ax.text(
-                    hover_x, hover_y,
-                    hover_data_text,
-                    transform=self.ax.transAxes,
-                    fontsize=8,
-                    color=self.config.colors["chart_hover"],
-                    bbox=dict(
-                        boxstyle="round,pad=0.3",  # 减小内边距
-                        fc="white",
-                        ec="none",
-                        lw=0,
-                        alpha=alpha
-                    ),
-                    ha=hover_ha,
-                    va=hover_va,
-                    zorder=10
-                )
-
-            self.canvas.draw_idle()
-
+            self.figure.savefig(file_path, dpi=300, bbox_inches='tight')
+            self.log(f"图表已导出: {file_path}", "success")
         except Exception as e:
-            self.on_leave(event)
-            return
-
-    def on_leave(self, event):
-        """处理鼠标离开事件，移除标注和标记"""
-        # 如果有设置的悬停日期，则不处理鼠标离开事件
-        if self.config.get("show_hover_data") and self.config.get("hover_date"):
-            return
-            
-        # 只移除悬停时创建的临时对象
-        if self.hover_line_x:
-            try:
-                self.hover_line_x.remove()
-            except:
-                pass
-            self.hover_line_x = None
-
-        if self.hover_line_y:
-            try:
-                self.hover_line_y.remove()
-            except:
-                pass
-            self.hover_line_y = None
-
-        if self.hover_marker:
-            try:
-                self.hover_marker.remove()
-            except:
-                pass
-            self.hover_marker = None
-
-        if self.hover_text_obj:
-            try:
-                self.hover_text_obj.remove()
-            except:
-                pass
-            self.hover_text_obj = None
-
-        self.canvas.draw_idle()
+            messagebox.showerror("错误", f"保存图表时出错:\n{str(e)}")
+            self.log(f"导出图表失败: {str(e)}", "error")
 
     def clear_log_text(self):
         """清空日志内容"""
@@ -1364,6 +880,10 @@ class PerformanceBacktestTool:
 
     def set_export_chart_settings(self):
         """设置导出图表选项"""
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         if self.df is None or len(self.df) == 0:
             messagebox.showwarning("警告", "请先导入数据文件！")
             self.log("设置导出图表失败: 无数据", "warning")
@@ -1371,7 +891,7 @@ class PerformanceBacktestTool:
 
         settings_window = tk.Toplevel(self.root)
         settings_window.title("导出图表设置")
-        settings_window.geometry("210x150")  # 增加高度以容纳更多内容
+        settings_window.geometry("210x130")  # 增加高度以容纳更多内容
         settings_window.resizable(False, False)
         settings_window.transient(self.root)
         settings_window.grab_set()
@@ -1381,6 +901,10 @@ class PerformanceBacktestTool:
 
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 按钮框架 - 提前定义
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         # 悬停数据显示选项
         hover_var = tk.BooleanVar(value=self.config.get("show_hover_data"))
@@ -1447,7 +971,7 @@ class PerformanceBacktestTool:
             else:
                 hover_date_frame.pack_forget()
                 # 关闭悬停数据时，立即清除图表上的悬停标记
-                self.remove_hover_date_marker()
+                self.chart_utils.remove_hover_date_marker()
 
         hover_check = ttk.Checkbutton(
             main_frame,
@@ -1467,10 +991,6 @@ class PerformanceBacktestTool:
         hover_date_entry.pack(side=tk.LEFT)
         hover_date_entry.bind("<FocusOut>", lambda e: validate_date_range())
 
-        # 按钮框架
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
-
         def save_settings():
             if hover_var.get():
                 if not validate_date_format() or not validate_date_range():
@@ -1478,12 +998,12 @@ class PerformanceBacktestTool:
                 self.config.set("show_hover_data", True)
                 self.config.set("hover_date", normalize_date_string(hover_date_var.get(), self.log))
                 # 设置悬停日期后，立即在图表上显示交叉线
-                self.update_chart_with_hover_date()
+                self.chart_utils.update_chart_with_hover_date()
             else:
                 self.config.set("show_hover_data", False)
                 self.config.set("hover_date", "")
                 # 清除悬停日期标记
-                self.remove_hover_date_marker()
+                self.chart_utils.remove_hover_date_marker()
             settings_window.destroy()
             self.log("导出图表设置已保存", "success")
 
@@ -1496,89 +1016,15 @@ class PerformanceBacktestTool:
         # 初始显示状态
         toggle_hover_date()
 
-    def update_chart_with_hover_date(self):
-        """更新图表，显示悬停日期的交叉线"""
-        if not self.config.get("show_hover_data") or not self.config.get("hover_date"):
-            return
-
-        try:
-            hover_date = datetime.strptime(self.config.get("hover_date"), "%Y-%m-%d")
-            if self.current_plot_data is not None:
-                # 找到最接近的日期
-                closest_idx = self.current_plot_data['日期'].sub(hover_date).abs().idxmin()
-                closest_row = self.current_plot_data.loc[closest_idx]
-                nav = closest_row['单位净值']
-                date = closest_row['日期']
-
-                # 清除之前的悬停标记
-                self.remove_hover_date_marker()
-
-                # 添加悬停十字线
-                self.hover_date_marker_x = self.ax.axvline(
-                    x=date,
-                    color=self.config.colors["chart_hover"],
-                    linestyle='--',
-                    linewidth=1,
-                    alpha=0.5,
-                    zorder=5
-                )
-
-                self.hover_date_marker_y = self.ax.axhline(
-                    y=nav,
-                    color=self.config.colors["chart_hover"],
-                    linestyle='--',
-                    linewidth=1,
-                    alpha=0.5,
-                    zorder=5
-                )
-
-                # 添加空心圆标记
-                self.hover_date_marker, = self.ax.plot(
-                    date,
-                    nav,
-                    marker='o',
-                    markersize=5,
-                    markerfacecolor='none',
-                    markeredgecolor=self.config.colors["chart_hover"],
-                    markeredgewidth=1.5,
-                    linestyle='',
-                    zorder=10
-                )
-
-                self.canvas.draw_idle()
-        except ValueError:
-            self.log("悬停日期格式无效", "error")
-
-    def remove_hover_date_marker(self):
-        """清除悬停日期标记"""
-        if hasattr(self, 'hover_date_marker_x') and self.hover_date_marker_x:
-            try:
-                self.hover_date_marker_x.remove()
-            except:
-                pass
-            self.hover_date_marker_x = None
-
-        if hasattr(self, 'hover_date_marker_y') and self.hover_date_marker_y:
-            try:
-                self.hover_date_marker_y.remove()
-            except:
-                pass
-            self.hover_date_marker_y = None
-
-        if hasattr(self, 'hover_date_marker') and self.hover_date_marker:
-            try:
-                self.hover_date_marker.remove()
-            except:
-                pass
-            self.hover_date_marker = None
-
-        self.canvas.draw_idle()
-
     def set_export_directory(self):
         """设置导出目录"""
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         settings_window = tk.Toplevel(self.root)
         settings_window.title("导出目录设置")
-        settings_window.geometry("210x160")  # 增加高度以容纳更多内容
+        settings_window.geometry("210x170")  
         settings_window.resizable(False, False)
         settings_window.transient(self.root)
         settings_window.grab_set()
@@ -1589,76 +1035,76 @@ class PerformanceBacktestTool:
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
 
+        # 按钮框架 - 提前定义
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
+
         # 当前目录选项
         current_dir_var = tk.BooleanVar(value=self.config.get("export_directory") == os.getcwd())
-
+        
+        # 存储当前选择的目录
+        selected_dir = tk.StringVar(value=self.config.get("export_directory"))
+        
         def toggle_directory_options():
             if current_dir_var.get():
+                # 选择当前目录
+                selected_dir.set(os.getcwd())
                 custom_dir_frame.pack_forget()
-                self.config.set("export_directory", os.getcwd())
             else:
+                # 选择自定义目录
                 custom_dir_frame.pack(fill=tk.X, pady=(5, 0))
+                # 如果还没有选择过自定义目录，使用当前配置
+                if selected_dir.get() == os.getcwd():
+                    selected_dir.set(self.config.get("export_directory"))
+
+        def browse_directory():
+            directory = filedialog.askdirectory(initialdir=selected_dir.get())
+            if directory:
+                selected_dir.set(directory)
+                # 更新工具提示
+                custom_dir_radio.tooltip.update_text(directory)
 
         current_dir_radio = ttk.Radiobutton(
             main_frame,
-            text=f"保存到当前目录: {os.getcwd()}",
+            text="保存到当前目录",
             variable=current_dir_var,
             value=True,
             command=toggle_directory_options
         )
-        current_dir_radio.pack(anchor=tk.W)
+        current_dir_radio.pack(anchor=tk.W, pady=(5, 0))
 
         # 自定义目录选项
         custom_dir_radio = ttk.Radiobutton(
             main_frame,
-            text="自定义保存位置:",
+            text="自定义保存位置",
             variable=current_dir_var,
             value=False,
             command=toggle_directory_options
         )
         custom_dir_radio.pack(anchor=tk.W, pady=(5, 0))
 
-        # 自定义目录框架 - 简化版，只显示文件夹图标
+        # 为自定义目录单选按钮添加工具提示
+        custom_dir_radio.tooltip = ToolTip(custom_dir_radio, selected_dir.get())
+
+        # 自定义目录框架
         custom_dir_frame = ttk.Frame(main_frame)
         if not current_dir_var.get():
             custom_dir_frame.pack(fill=tk.X, pady=(5, 0))
-
-        # 创建文件夹图标按钮
-        folder_icon = tk.PhotoImage(width=16, height=16)
-        # 简单的文件夹图标绘制
-        folder_icon.put("#4682B4", to=(4, 4, 12, 12))  # 天蓝色方块代替图标
-
-        # 存储工具提示对象的引用
-        folder_tooltip = None
-
-        def browse_directory():
-            nonlocal folder_tooltip
-            directory = filedialog.askdirectory(initialdir=self.config.get("export_directory"))
-            if directory:
-                self.config.set("export_directory", directory)
-                # 销毁旧的工具提示（如果存在）
-                if folder_tooltip:
-                    folder_tooltip.hidetip()
-                # 创建新的工具提示
-                folder_tooltip = ToolTip(folder_btn, directory)
-
-        folder_btn = ttk.Button(
-            custom_dir_frame, 
-            image=folder_icon, 
-            command=browse_directory,
-            width=3
-        )
-        folder_btn.image = folder_icon  # 保持引用
-        folder_btn.pack(side=tk.LEFT, padx=(20, 5))
         
-        # 初始工具提示
-        folder_tooltip = ToolTip(folder_btn, self.config.get("export_directory"))
-
-        # 按钮框架
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
-
+        # 浏览按钮
+        browse_button = ttk.Button(
+            custom_dir_frame, 
+            text="选择目录",
+            command=browse_directory,
+            width=10
+        )
+        browse_button.pack(side=tk.LEFT, padx=(20, 5))
+        
         def save_settings():
+            if current_dir_var.get():
+                self.config.set("export_directory", os.getcwd())
+            else:
+                self.config.set("export_directory", selected_dir.get())
             settings_window.destroy()
             self.log(f"导出目录已设置为: {self.config.get('export_directory')}", "success")
 
@@ -1671,17 +1117,12 @@ class PerformanceBacktestTool:
         # 初始显示状态
         toggle_directory_options()
 
-    def set_log_window(self):
-        """切换日志窗口显示/隐藏"""
-        if self.config.get("show_log_window", True):
-            self.hide_log_window()
-            self.log("已关闭日志窗口", "success")
-        else:
-            self.show_log_window()
-            self.log("已开启日志窗口", "success")
-
     def set_textbox_settings(self):
         """设置提示框位置"""
+        if not self.is_activated:
+            messagebox.showwarning("警告", "软件未激活，无法使用此功能")
+            return
+            
         settings_window = tk.Toplevel(self.root)
         settings_window.title("提示框设置")
         settings_window.geometry("210x130")  # 调整大小
@@ -1694,6 +1135,10 @@ class PerformanceBacktestTool:
 
         main_frame = ttk.Frame(settings_window, padding=10)
         main_frame.pack(fill=tk.BOTH, expand=True)
+
+        # 按钮框架 - 提前定义
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
 
         # 提示框启用选项
         show_textbox_var = tk.BooleanVar(value=self.config.get("show_textbox", True))
@@ -1739,10 +1184,6 @@ class PerformanceBacktestTool:
         )
         position_combo.pack(side=tk.LEFT)
 
-        # 按钮框架
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(side=tk.BOTTOM, fill=tk.X, pady=(20, 0))
-
         def save_settings():
             self.config.set("show_textbox", show_textbox_var.get())
             if show_textbox_var.get():
@@ -1762,19 +1203,6 @@ class PerformanceBacktestTool:
 
         # 初始显示状态
         toggle_position_options()
-
-    def hide_log_window(self):
-        """隐藏日志窗口"""
-        if hasattr(self, 'log_frame'):
-            self.log_frame.pack_forget()
-            # 获取当前窗口位置
-            x = self.root.winfo_x()
-            y = self.root.winfo_y()
-            # 恢复原宽度
-            self.root.geometry(f"500x540+{x}+{y}")
-            self.config.set("show_log_window", False)
-            # 更新菜单文本
-            self.settings_menu.entryconfig(3, label="开启日志")
 
 if __name__ == "__main__":
     root = tk.Tk()

@@ -47,6 +47,7 @@ def create_menu_bar(app):
     about_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="关于", menu=about_menu)
     about_menu.add_command(label="说明", command=app.show_readme)
+    about_menu.add_command(label="激活", command=app.show_activation)  # 添加激活菜单项
 
     return menubar, settings_menu
 
