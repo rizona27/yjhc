@@ -14,7 +14,7 @@ import uuid
 
 # 导入自定义模块
 from core import PerformanceAnalysis
-from utils import setup_fonts, normalize_date_string, detect_file_type, read_csv_file, read_excel_file, log_to_text_widget, cleanup_exit, log_message
+from utils import setup_fonts, normalize_date_string, detect_file_type, read_csv_file, read_excel_file, log_to_text_widget, cleanup_exit, log_message, OPEN_WINDOWS, MAX_WINDOWS
 from gui_components import create_menu_bar, create_main_interface, create_log_window
 from config import Config
 from tooltip import ToolTip
@@ -25,10 +25,6 @@ from activation import ActivationManager
 
 # 忽略openpyxl的样式警告
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.stylesheet")
-
-# 全局变量跟踪打开的窗口数
-OPEN_WINDOWS = 0
-MAX_WINDOWS = 1
 
 class PerformanceBacktestTool:
     def __init__(self, root):

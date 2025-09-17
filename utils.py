@@ -1,3 +1,4 @@
+# utils.py
 import pandas as pd
 import numpy as np
 import matplotlib.font_manager as fm
@@ -10,6 +11,10 @@ import re
 from dateutil.parser import parse as dateutil_parse
 import warnings
 import chardet
+
+# 全局变量跟踪打开的窗口数
+OPEN_WINDOWS = 0
+MAX_WINDOWS = 1
 
 # 忽略openpyxl的样式警告
 warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl.styles.stylesheet")
