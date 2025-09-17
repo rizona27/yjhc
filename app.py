@@ -1002,8 +1002,11 @@ class PerformanceBacktestTool:
             else:
                 self.config.set("show_hover_data", False)
                 self.config.set("hover_date", "")
-                # 清除悬停日期标记
+                # 清除悬停日期标记并重新绘制图表
                 self.chart_utils.remove_hover_date_marker()
+                # 重新绘制图表以确保交叉线被清除
+                if self.df is not None and len(self.df) > 0:
+                    self.analyze_performance()
             settings_window.destroy()
             self.log("导出图表设置已保存", "success")
 
