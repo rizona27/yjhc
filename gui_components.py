@@ -46,8 +46,8 @@ def create_menu_bar(app):
     # 关于菜单
     about_menu = tk.Menu(menubar, tearoff=0)
     menubar.add_cascade(label="关于", menu=about_menu)
-    about_menu.add_command(label="说明", command=app.show_readme)
-    about_menu.add_command(label="激活", command=app.show_activation)  # 添加激活菜单项
+    about_menu.add_command(label="使用说明", command=app.show_readme)
+    about_menu.add_command(label="工具激活", command=app.show_activation)  
 
     return menubar, settings_menu
 
@@ -142,10 +142,12 @@ def create_main_interface(app, parent):
 
     ttk.Label(start_frame, text="开始日期:", width=8, style="TLabel").pack(side=tk.LEFT)
 
-    start_entry = ttk.Entry(start_frame, width=12, style="TEntry")
-    start_entry.pack(side=tk.LEFT, padx=3)
+    # 修改：先创建正常状态的输入框，插入文本并设置颜色，然后禁用
+    start_entry = ttk.Entry(start_frame, width=12, style="TEntry", state='normal')
     start_entry.insert(0, "YYYY-MM-DD")
     start_entry.configure(foreground=app.config.colors["placeholder"])
+    start_entry.config(state='disabled')  # 最后禁用
+    start_entry.pack(side=tk.LEFT, padx=3)
 
     start_entry.bind("<FocusIn>", app.on_start_focus_in)
     start_entry.bind("<FocusOut>", app.on_start_focus_out)
@@ -156,10 +158,12 @@ def create_main_interface(app, parent):
 
     ttk.Label(end_frame, text="结束日期:", width=8, style="TLabel").pack(side=tk.LEFT)
 
-    end_entry = ttk.Entry(end_frame, width=12, style="TEntry")
-    end_entry.pack(side=tk.LEFT, padx=3)
+    # 修改：先创建正常状态的输入框，插入文本并设置颜色，然后禁用
+    end_entry = ttk.Entry(end_frame, width=12, style="TEntry", state='normal')
     end_entry.insert(0, "YYYY-MM-DD")
     end_entry.configure(foreground=app.config.colors["placeholder"])
+    end_entry.config(state='disabled')  # 最后禁用
+    end_entry.pack(side=tk.LEFT, padx=3)
 
     end_entry.bind("<FocusIn>", app.on_end_focus_in)
     end_entry.bind("<FocusOut>", app.on_end_focus_out)

@@ -1,5 +1,6 @@
 # config.py
 import os
+import json
 import tkinter as tk
 
 class Config:
@@ -44,9 +45,35 @@ class Config:
             "max_min_position": "top-left",  # top-left, top-right, bottom-left, bottom-right
             "textbox_alpha": 0.5  # 提示框透明度
         }
+        
+        # 配置文件路径
+        self.config_file = os.path.join(os.path.expanduser("~"), ".performance_tool_config")
+        
+        # 加载配置文件
+        self.load_config()
     
     def get(self, key, default=None):
         return self.settings.get(key, default)
     
     def set(self, key, value):
         self.settings[key] = value
+        # 保存配置到文件
+        self.save_config()
+        
+    def load_config(self):
+        """从文件加载配置"""
+        if os.path.exists(self.config_file):
+            try:
+                with open(self.config_file, "r", encoding="utf-8") as f:
+                    self.settings = json.load(f)
+            except (IOError, json.JSONDecodeError):
+                # 如果加载失败，使用默认配置
+                pass
+                
+    def save_config(self):
+        """保存配置到文件"""
+        try:
+            with open(self.config_file, "w", encoding="utf-8") as f:
+                json.dump(self.settings, f, ensure_ascii=False, indent=4)
+        except IOError:
+            pass

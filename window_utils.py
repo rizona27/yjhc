@@ -61,30 +61,26 @@ class WindowUtils:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         
         help_text = """
-1. 导入数据
+1. 导入及导出
 - 支持csv、xls、xlsx格式
 - 自动识别列头并排序
+- 自动区间命名导出趋势图[V]
 
-2. 数据分析
-- 自动计算固定周期业绩
-- 自动计算年化收益率、最大回撤
-- 支持自定义日期区间分析
-
-3. 净值趋势图
-- 自动生成净值趋势图
+2. 净值趋势图
 - 标记最高点和最低点
-- 鼠标悬停可显示日期和净值
+- 悬停显示日期和净值[V]
 
-4. 导出图表
-- 可以区间命名导出趋势图
+3. 数据分析
+- 自动计算年化收益率、最大回撤
+- 支持自定义日期区间分析[V]
 
-5. 其他
-- 恢复全览：返回完整数据视图
-- 系统日志：记录程序运行过程
-
-提示：
+4. 其他
 - 已支持多种日期格式：
   YYYY-MM-DD, YYYY/MM/DD, YYYYMMDD
+- 恢复全览：返回完整数据视图[V]
+- 系统日志：记录程序运行过程[V]
+
+*[V]为激活版本功能
 """
     
         help_text_widget = tk.Text(
@@ -238,28 +234,43 @@ class WindowUtils:
         def activate_product():
             code = activation_entry.get().replace("-", "")
             if not code:
-                messagebox.showwarning("警告", "请输入激活码")
+                self.show_custom_message("警告", "请输入激活码")
                 return
                 
             result = self.activation_manager.activate_product(code)
             if result:
-                messagebox.showinfo("成功", "软件激活成功！")
+                self.show_custom_message("成功", "软件激活成功！")
                 app.is_activated = True
+                # 更新主应用的激活状态界面
                 app.update_activation_status()
+                # 更新激活窗口内的状态
                 status_label.config(text="已激活", foreground=self.config.colors["success"])
+                # 将激活码显示在输入框中，并设置为禁用
+                activation_entry.delete(0, tk.END)
+                activation_entry.insert(0, code.upper())
                 activation_entry.config(state=tk.DISABLED)
                 activate_btn.config(state=tk.DISABLED)
+                # 更新倒计时显示
                 update_time_display()
                 app.log("软件激活成功", "success")
             else:
-                messagebox.showerror("错误", "激活码无效或已过期")
+                self.show_custom_message("错误", "激活码无效或已过期")
                 app.log("激活失败: 激活码无效", "error")
         
         activate_btn = ttk.Button(activation_input_frame, text="激活", command=activate_product, width=8)
         activate_btn.pack(side=tk.LEFT, padx=(10, 0))
         
         if is_activated:
-            activation_entry.config(state=tk.DISABLED)
+            activation_info = self.activation_manager.get_activation_info()
+            if activation_info:
+                activation_type = activation_info.get("activation_type")
+                if activation_type == "temporary":
+                    activation_entry.insert(0, "0315")
+                elif activation_type == "permanent":
+                    device_id = self.activation_manager.get_device_id()
+                    permanent_code = self.activation_manager.generate_permanent_code(device_id)
+                    activation_entry.insert(0, permanent_code)
+                activation_entry.config(state=tk.DISABLED)
             activate_btn.config(state=tk.DISABLED)
         
         device_frame = ttk.Frame(main_frame)
@@ -274,19 +285,15 @@ class WindowUtils:
         def copy_device_id():
             self.app.root.clipboard_clear()
             self.app.root.clipboard_append(device_id_var.get())
-            messagebox.showinfo("成功", "设备ID已复制到剪贴板")
+            self.show_custom_message("成功", "设备ID已复制到剪贴板")
         
         ttk.Button(device_frame, text="复制", command=copy_device_id, width=8).pack(side=tk.LEFT, padx=(10, 0))
         
         activation_help_text = """
-激活说明:
-- 临时激活码: 0315 (设备绑定，有效期7天)
-- 永久激活码: Mail to rizona.cn@gmail.com
+- 临时激活码: 0315 (设备绑定,可使用7天)
+- 未激活状态下可使用基本功能,激活后全部解锁
 
-Tips:
-- 激活后解锁所有功能
-- 未激活状态下可使用基本功能
-- 过期后需要重新激活
+- Designed by: rizona.cn@gmail.com
 """
         text_frame = ttk.Frame(main_frame)
         text_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
@@ -315,3 +322,27 @@ Tips:
     def close_readme(self, window):
         window.grab_release()
         window.destroy()
+    
+    def show_custom_message(self, title, message):
+        """显示自定义消息框，居中于父窗口"""
+        window = tk.Toplevel(self.app.root)
+        window.title(title)
+        window.geometry("200x120")
+        window.resizable(False, False)
+        window.transient(self.app.root)
+        window.grab_set()
+        window.configure(bg=self.config.colors["background"])
+        
+        # 居中显示于父窗口
+        self.center_window_relative(window, self.app.root)
+        
+        main_frame = ttk.Frame(window, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+        
+        ttk.Label(main_frame, text=message, 
+                wraplength=350, justify=tk.LEFT).pack(pady=10)
+        
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=10)
+        
+        ttk.Button(btn_frame, text="确定", command=window.destroy, width=10).pack()

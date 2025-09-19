@@ -1,0 +1,9 @@
+pyinstaller
+pandas
+matplotlib
+openpyxl
+xlrd
+chardet
+psutil
+python-dateutil
+pycryptodome

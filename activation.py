@@ -10,6 +10,7 @@ import base64
 from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 import binascii
+import tkinter as tk
 
 class ActivationManager:
     def __init__(self):
@@ -219,3 +220,59 @@ class ActivationManager:
         except IOError:
             print("保存文件时发生IO错误。")
             return False
+
+    def update_activation_status(self, app):
+        """根据激活状态更新界面"""
+        is_activated = self.check_activation()
+        app.is_activated = is_activated
+        
+        # 获取文件菜单
+        menu = app.root.nametowidget(".!menu")
+        file_menu = menu.winfo_children()[0]  # 文件菜单是第一个
+
+        if not is_activated:
+            # 禁用设置菜单
+            app.settings_menu.entryconfig(0, state=tk.DISABLED)  # 导出图表设置
+            app.settings_menu.entryconfig(1, state=tk.DISABLED)  # 导出目录设置
+            app.settings_menu.entryconfig(2, state=tk.DISABLED)  # 提示框设置
+            app.settings_menu.entryconfig(3, state=tk.DISABLED)  # 日志窗口
+            
+            # 禁用文件菜单中的导出图表
+            file_menu.entryconfig("导出图表", state=tk.DISABLED)
+            
+            # 禁用自定义分析按钮
+            app.components["btn_custom"].config(state=tk.DISABLED)
+            
+            # 禁用全览按钮
+            app.components["btn_reset"].config(state=tk.DISABLED)
+            
+            # 禁用日期输入框
+            app.components["start_entry"].config(state=tk.DISABLED)
+            app.components["end_entry"].config(state=tk.DISABLED)
+
+            # 启用重置按钮
+            app.components["btn_reset_app"].config(state=tk.NORMAL)
+
+        else:
+            # 启用设置菜单
+            app.settings_menu.entryconfig(0, state=tk.NORMAL)
+            app.settings_menu.entryconfig(1, state=tk.NORMAL)
+            app.settings_menu.entryconfig(2, state=tk.NORMAL)
+            app.settings_menu.entryconfig(3, state=tk.NORMAL)
+            
+            # 启用文件菜单中的导出图表（如果有数据）
+            if app.df is not None and len(app.df) > 0:
+                file_menu.entryconfig("导出图表", state=tk.NORMAL)
+            
+            # 启用自定义分析按钮
+            app.components["btn_custom"].config(state=tk.NORMAL)
+            app.components["btn_reset"].config(state=tk.NORMAL)
+            app.components["btn_reset_app"].config(state=tk.NORMAL)
+            
+            # 启用日期输入框（如果有数据）
+            if app.df is not None and len(app.df) > 0:
+                app.components["start_entry"].config(state=tk.NORMAL)
+                app.components["end_entry"].config(state=tk.NORMAL)
+            else:
+                app.components["start_entry"].config(state=tk.DISABLED)
+                app.components["end_entry"].config(state=tk.DISABLED)

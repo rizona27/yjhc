@@ -167,13 +167,21 @@ class PerformanceAnalysis:
             # 方案二：基于数据点数量而不是天数来判断
             if len(sub_df) >= 2:
                 days_actual = (sub_df['日期'].iloc[-1] - sub_df['日期'].iloc[0]).days
-                nav_start = sub_df['单位净值'].iloc[0]
-                nav_end = sub_df['单位净值'].iloc[-1]
                 
-                annual_return = self.calculate_annual_return(nav_start, nav_end, days_actual)
-                max_drawdown = self.calculate_max_drawdown(sub_df['单位净值'])
-                
-                results.append((freq_name, days_actual, f"{annual_return:.2%}", f"-{max_drawdown:.2%}"))
+                # 检查实际天数是否达到指标天数的90%
+                if days_actual < days_ago * 0.9:
+                    # 不足90%，显示为占位符
+                    results.append((freq_name, '/', '/', '/'))
+                    self.log(f"数据不足{freq_name}的90%，跳过计算。实际天数: {days_actual}, 要求天数: {days_ago}", "warning")
+                else:
+                    nav_start = sub_df['单位净值'].iloc[0]
+                    nav_end = sub_df['单位净值'].iloc[-1]
+                    
+                    annual_return = self.calculate_annual_return(nav_start, nav_end, days_actual)
+                    max_drawdown = self.calculate_max_drawdown(sub_df['单位净值'])
+                    
+                    results.append((freq_name, days_actual, f"{annual_return:.2%}", f"-{max_drawdown:.2%}"))
+                    self.log(f"{freq_name}: 天数={days_actual}, 年化={annual_return:.2%}, 回撤={max_drawdown:.2%}", "info")
             else:
                 self.log(f"数据不足{freq_name}，跳过计算。实际数据点数: {len(sub_df)}", "warning")
                 # 即使数据不足，也显示该周期，并用斜杠填充数据
