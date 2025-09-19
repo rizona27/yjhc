@@ -96,8 +96,21 @@ class WindowUtils:
             pady=10
         )
         help_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    
-        help_text_widget.insert(tk.END, help_text.strip())
+        
+        # 配置标签样式
+        help_text_widget.tag_configure("gold", foreground="#DAA520")  # 金色
+        help_text_widget.tag_configure("blue_italic", foreground="#0066CC", 
+                                      font=("Helvetica", 9, "italic bold"))  # 蓝色斜体加粗
+        
+        # 插入文本并应用标签
+        lines = help_text.strip().split('\n')
+        for line in lines:
+            if '[V]' in line:
+                # 带[V]的行使用金色
+                help_text_widget.insert(tk.END, line + '\n', "gold")
+            else:
+                help_text_widget.insert(tk.END, line + '\n')
+        
         help_text_widget.config(state=tk.DISABLED)
         scrollbar.config(command=help_text_widget.yview)
 
@@ -107,8 +120,8 @@ class WindowUtils:
         author_label = ttk.Label(
             author_frame,
             text="Arizona.cn@gmail.com",
-            font=("Helvetica", 10),
-            foreground=self.config.colors["accent"],
+            font=("Helvetica", 10, "italic bold"),  # 斜体加粗
+            foreground="#0066CC",  # 蓝色
             background=self.config.colors["background"]
         )
         author_label.pack(side=tk.BOTTOM)
@@ -135,7 +148,7 @@ class WindowUtils:
         status_frame = ttk.Frame(main_frame)
         status_frame.pack(fill=tk.X, pady=(0, 10))
         
-        ttk.Label(status_frame, text="激活状态:", font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
+        ttk.Label(status_frame, text="状态:", font=("Helvetica", 10, "bold")).pack(side=tk.LEFT)
         status_label = ttk.Label(status_frame, text=status_text, font=("Helvetica", 10, "bold"), foreground=status_color)
         status_label.pack(side=tk.LEFT, padx=(5, 0))
         
@@ -293,7 +306,7 @@ class WindowUtils:
 - 临时激活码: 0315 (设备绑定,可使用7天)
 - 未激活状态下可使用基本功能,激活后全部解锁
 
-- Designed by: rizona.cn@gmail.com
+- Developed by: rizona.cn@gmail.com
 """
         text_frame = ttk.Frame(main_frame)
         text_frame.pack(fill=tk.BOTH, expand=True, pady=(10, 0))
@@ -314,8 +327,20 @@ class WindowUtils:
             pady=10
         )
         activation_help_text_widget.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        
+        # 配置标签样式
+        activation_help_text_widget.tag_configure("blue_italic", foreground="#0066CC", 
+                                                 font=("Helvetica", 9, "italic bold"))  # 蓝色斜体加粗
+        
+        # 插入文本并应用标签
+        lines = activation_help_text.strip().split('\n')
+        for line in lines:
+            if 'Developed by:' in line:
+                # 作者信息使用蓝色斜体加粗
+                activation_help_text_widget.insert(tk.END, line + '\n', "blue_italic")
+            else:
+                activation_help_text_widget.insert(tk.END, line + '\n')
 
-        activation_help_text_widget.insert(tk.END, activation_help_text.strip())
         activation_help_text_widget.config(state=tk.DISABLED)
         scrollbar.config(command=activation_help_text_widget.yview)
 

@@ -67,9 +67,9 @@ class AnalysisOperations:
         self.app.components["btn_reset"].config(state=tk.DISABLED)
         self.app.components["btn_reset_app"].config(state=tk.NORMAL)
 
-        # 重置导出图表设置
-        self.config.set("show_hover_data", False)
-        self.config.set("hover_date", "")
+        # 重置导出图表设置 - 修改为直接修改内存中的值，避免不必要地保存到文件
+        self.config.settings["show_hover_data"] = False
+        self.config.settings["hover_date"] = ""
 
         self.app.clear_log_text()
 
@@ -218,9 +218,9 @@ class AnalysisOperations:
         self.app.analyze_performance()
         self.app.calculate_fixed_freq()
 
-        # 重置导出图表设置
-        self.config.set("show_hover_data", False)
-        self.config.set("hover_date", "")
+        # 重置导出图表设置 - 修改为直接修改内存中的值，避免不必要地保存到文件
+        self.config.settings["show_hover_data"] = False
+        self.config.settings["hover_date"] = ""
 
         self.app.log("已恢复全览视图", "success")
 

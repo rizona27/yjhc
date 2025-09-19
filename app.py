@@ -74,7 +74,7 @@ class PerformanceBacktestTool:
             main_frame = ttk.Frame(warning_window, padding=10)
             main_frame.pack(fill=tk.BOTH, expand=True)
             
-            ttk.Label(main_frame, text=f"最多只能打开{MAX_WINDOWS}个窗口", 
+            ttt.Label(main_frame, text=f"最多只能打开{MAX_WINDOWS}个窗口", 
                     wraplength=250, justify=tk.LEFT).pack(pady=10)
             
             btn_frame = ttk.Frame(main_frame)
@@ -88,8 +88,14 @@ class PerformanceBacktestTool:
 
         self.root = root
         self.root.title("业绩表现回测工具")
-        # 初始宽度设为500，不包含日志区域
-        self.root.geometry("500x540")  
+        
+        # 初始化配置
+        self.config = Config()
+        
+        # 根据配置决定初始窗口大小
+        show_log = self.config.get("show_log_window", False)
+        initial_width = 500 + 300 if show_log else 500
+        self.root.geometry(f"{initial_width}x540")  # 设置初始大小
         self.root.resizable(False, False)  # 不允许拉伸窗口
 
         # 设置程序图标
@@ -100,9 +106,6 @@ class PerformanceBacktestTool:
 
         # 窗口关闭事件处理
         self.root.protocol("WM_DELETE_WINDOW", lambda: cleanup_exit(self.root))
-
-        # 初始化配置
-        self.config = Config()
         
         # 初始化激活管理器
         self.activation_manager = ActivationManager()
@@ -180,13 +183,14 @@ class PerformanceBacktestTool:
         self.left_frame = ttk.Frame(self.main_container)
         self.left_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        # 创建右侧日志区域（初始隐藏）
+        # 创建右侧日志区域
         self.log_frame = ttk.Frame(self.main_container, width=300)  # 固定宽度
         self.log_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=False)
         self.log_frame.pack_propagate(False)  # 阻止框架调整大小以适应内容
 
-        # 初始隐藏日志区域
-        self.log_frame.pack_forget()
+        # 根据配置决定是否隐藏日志窗口
+        if not show_log:
+            self.log_frame.pack_forget()
 
         # 创建菜单栏
         self.menu_bar, self.settings_menu = create_menu_bar(self)
@@ -218,13 +222,8 @@ class PerformanceBacktestTool:
         # 创建日志窗口（放在右侧框架中）
         self.log_texts = create_log_window(self, self.log_frame)
 
-        # 根据配置决定是否显示日志窗口
-        if self.config.get("show_log_window", False):
-            # 如果配置为显示日志窗口，先调整窗口大小，再显示日志区域
-            self.root.geometry(f"{500 + 300}x540")
-            self.show_log_window()
-        else:
-            self.hide_log_window()
+        # 更新日志菜单标签
+        self.update_log_menu_label()
 
         # 根据激活状态更新界面
         self.activation_manager.update_activation_status(self)
@@ -237,18 +236,7 @@ class PerformanceBacktestTool:
         # 强制更新窗口布局，确保获取到正确的尺寸
         self.root.update_idletasks()
         
-        # 确保日志窗口状态已正确更新
-        if self.config.get("show_log_window", False):
-            # 如果显示日志窗口，确保窗口尺寸已调整
-            self.root.geometry(f"{500 + 300}x540")
-        else:
-            # 如果不显示日志窗口，确保窗口尺寸正确
-            self.root.geometry("500x540")
-        
-        # 再次强制更新窗口布局
-        self.root.update_idletasks()
-        
-        # 现在调用居中函数，它将使用正确的窗口尺寸
+        # 居中窗口
         self.window_utils.center_window(self.root)
         
         # 延迟更新图表布局，解决初始渲染问题
